@@ -22,21 +22,37 @@ const isVisible = computed(() => props.element.visible !== false)
 // Drag state
 let isDragging = false
 let startMouseX = 0, startMouseY = 0
-let startElX = 0, startElY = 0
+// Store initial positions of all dragged elements
+let startPositions = new Map()
 
 function onMouseDown(e) {
   if (isLocked.value) return
   if (e.target.classList.contains('resize-handle')) return
 
-  // Selection
-  editorStore.selectElement(props.element.id, e.ctrlKey || e.metaKey || e.shiftKey)
+  // Selection logic for dragging multiple items
+  const isMultiModifier = e.ctrlKey || e.metaKey || e.shiftKey
+  if (!isSelected.value) {
+    editorStore.selectElement(props.element.id, isMultiModifier)
+  } else if (isMultiModifier) {
+    editorStore.selectElement(props.element.id, true)
+  }
   editorStore.setActiveTool('select')
 
   isDragging = false
   startMouseX = e.clientX
   startMouseY = e.clientY
-  startElX = props.element.x
-  startElY = props.element.y
+  
+  // Record initial positions for all currently selected elements
+  startPositions.clear()
+  const slide = projectStore.getProject(projectId.value)?.slides.find(s => s.id === slideId.value)
+  if (slide) {
+    editorStore.selectedElementIds.forEach(id => {
+      const el = slide.elements.find(e => e.id === id)
+      if (el && !el.locked) {
+        startPositions.set(id, { x: el.x, y: el.y })
+      }
+    })
+  }
 
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
@@ -49,17 +65,26 @@ function onMouseMove(e) {
   if (!isDragging && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) isDragging = true
   if (!isDragging) return
 
-  let newX = startElX + dx
-  let newY = startElY + dy
-  if (editorStore.snapToGrid && editorStore.gridSize) {
-    const g = editorStore.gridSize
-    newX = Math.round(newX / g) * g
-    newY = Math.round(newY / g) * g
-  }
-  projectStore.updateElement(projectId.value, slideId.value, props.element.id, { x: newX, y: newY })
+  startPositions.forEach((startPos, id) => {
+    let newX = startPos.x + dx
+    let newY = startPos.y + dy
+    if (editorStore.snapToGrid && editorStore.gridSize) {
+      const g = editorStore.gridSize
+      newX = Math.round(newX / g) * g
+      newY = Math.round(newY / g) * g
+    }
+    projectStore.updateElement(projectId.value, slideId.value, id, { x: newX, y: newY })
+  })
 }
 
-function onMouseUp() {
+function onMouseUp(e) {
+  if (!isDragging) {
+    const isMultiModifier = e.ctrlKey || e.metaKey || e.shiftKey
+    if (!isMultiModifier && editorStore.selectedElementIds.length > 1) {
+      editorStore.selectElement(props.element.id, false)
+    }
+  }
+
   isDragging = false
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)

@@ -69,32 +69,102 @@ onMounted(() => {
 })
 onBeforeUnmount(() => ro?.disconnect())
 
-// Click on canvas background deselects all
+// Hovered and drag states
+const isDragging = ref(false)
+const selectionStart = ref({ x: 0, y: 0 })
+const selectionCurrent = ref({ x: 0, y: 0 })
+const isSelecting = ref(false)
+
+const selectionBox = computed(() => {
+  if (!isSelecting.value) return null
+  const x = Math.min(selectionStart.value.x, selectionCurrent.value.x)
+  const y = Math.min(selectionStart.value.y, selectionCurrent.value.y)
+  const width = Math.abs(selectionCurrent.value.x - selectionStart.value.x)
+  const height = Math.abs(selectionCurrent.value.y - selectionStart.value.y)
+  return { x, y, width, height }
+})
+
+// Click on canvas background deselects all, or handled by mouseup if selecting
 function onCanvasClick(e) {
-  if (e.target === canvasRef.value || e.target === e.currentTarget) {
+  // Only deselect if we weren't drag-selecting
+  if (!isSelecting.value && (e.target === canvasRef.value || e.target === e.currentTarget)) {
     editorStore.clearSelection()
   }
 }
 
-// Click/drop to add new element
+// Click/drop to add new element or start select marquee
 function onCanvasMouseDown(e) {
   const tool = editorStore.activeTool
-  if (tool === 'select') return
   if (e.target !== canvasRef.value && e.target !== e.currentTarget) return
 
   e.preventDefault()
   e.stopPropagation()
 
   const rect = canvasRef.value.getBoundingClientRect()
-  const x = (e.clientX - rect.left) / editorStore.zoomLevel
-  const y = (e.clientY - rect.top) / editorStore.zoomLevel
+  const startX = (e.clientX - rect.left) / editorStore.zoomLevel
+  const startY = (e.clientY - rect.top) / editorStore.zoomLevel
+
+  if (tool === 'select') {
+    // Start marquee selection
+    isSelecting.value = true
+    selectionStart.value = { x: startX, y: startY }
+    selectionCurrent.value = { x: startX, y: startY }
+
+    const onMouseMove = (moveEvt) => {
+      selectionCurrent.value = {
+        x: (moveEvt.clientX - rect.left) / editorStore.zoomLevel,
+        y: (moveEvt.clientY - rect.top) / editorStore.zoomLevel
+      }
+    }
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      
+      const box = selectionBox.value
+      // Threshold for drag selection
+      if (box && (box.width > 2 || box.height > 2)) {
+        const selectedIds = sortedElements.value.filter(el => {
+          const elX = el.x
+          const elY = el.y
+          const elW = el.width || 100 // Default if no width
+          const elH = el.height || 100
+
+          // Check intersection
+          return (
+            elX < box.x + box.width &&
+            elX + elW > box.x &&
+            elY < box.y + box.height &&
+            elY + elH > box.y
+          )
+        }).map(el => el.id)
+
+        if (selectedIds.length > 0) {
+          editorStore.setSelection(selectedIds)
+        } else {
+          editorStore.clearSelection()
+        }
+      } else {
+        editorStore.clearSelection()
+      }
+      
+      // Delay so onCanvasClick won't immediately clear selection
+      setTimeout(() => {
+        isSelecting.value = false
+      }, 0)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return
+  }
 
   // Snap to grid
   const snap = (v) => editorStore.snapToGrid ? Math.round(v / editorStore.gridSize) * editorStore.gridSize : v
 
   const el = projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, tool, {
-    x: snap(x - 75),
-    y: snap(y - 40),
+    x: snap(startX - 75),
+    y: snap(startY - 40),
   })
 
   if (el) {
@@ -252,6 +322,18 @@ function goNextSlide() {
             v-if="editorStore.activeTool !== 'select'"
             class="drop-hint"
           >Click anywhere to add {{ editorStore.activeTool }}</div>
+          
+          <!-- Selection Marquee -->
+          <div
+            v-if="isSelecting && selectionBox"
+            class="selection-marquee"
+            :style="{
+              left: selectionBox.x + 'px',
+              top: selectionBox.y + 'px',
+              width: selectionBox.width + 'px',
+              height: selectionBox.height + 'px'
+            }"
+          ></div>
         </div>
       </div>
 
@@ -359,6 +441,13 @@ function goNextSlide() {
   color: var(--color-primary);
   pointer-events: none;
   text-transform: capitalize;
+}
+.selection-marquee {
+  position: absolute;
+  background: rgba(108,71,255,.15);
+  border: 1px solid rgba(108,71,255,.6);
+  pointer-events: none;
+  z-index: 1000;
 }
 
 /* Context Menu */

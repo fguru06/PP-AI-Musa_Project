@@ -12,6 +12,11 @@ const activeMode = ref('generate') // 'generate' | 'quiz' | 'voiceover' | 'impro
 const prompt = ref('')
 const topic = ref('')
 const result = ref('')
+
+watch(activeMode, () => {
+  result.value = ''
+})
+
 const quizCount = ref(4)
 const slideType = ref('general')
 const targetLang = ref('Spanish')
@@ -363,9 +368,44 @@ async function generateVoiceover() {
 }
 
 async function generateTranslation() {
-  if (!prompt.value.trim()) return
-  const text = await aiStore.generateTranslation(prompt.value, targetLang.value)
-  if (text) result.value = text
+  const textToTranslate = selectedEl.value?.content?.text
+  if (!textToTranslate) return
+  const text = await aiStore.generateTranslation(textToTranslate, targetLang.value)
+  if (text) {
+    result.value = text
+  }
+}
+
+async function applyTranslation() {
+  if (!result.value || !selectedEl.value) return
+  projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, selectedEl.value.id, {
+    content: { ...selectedEl.value.content, text: result.value }
+  })
+}
+
+const imageTopic = ref('')
+
+async function generateAiImage() {
+  if (!imageTopic.value.trim()) return
+  result.value = "Optimizing prompt..."
+  
+  let finalPrompt = imageTopic.value
+  const enhanced = await aiStore.generateImagePrompt(imageTopic.value)
+  if (enhanced) {
+    finalPrompt = enhanced.replace(/```(json)?\n?/g, '').trim()
+  }
+  
+  result.value = `Fetching image for: ${finalPrompt}`
+  
+  // Create Pollinations URL (free AI image generation, no API key needed)
+  const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=800&height=600&nologo=true`
+  
+  projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
+    x: 60, y: 150, width: 400, height: 300,
+    content: { src: imgUrl, objectFit: 'cover' }
+  })
+  
+  result.value = "Image added to slide!"
 }
 
 async function improveSelectedText() {
@@ -399,6 +439,8 @@ async function runFreePrompt() {
         { id: 'quiz', label: '✅ Quiz' },
         { id: 'voiceover', label: '🎙 Voiceover' },
         { id: 'improve', label: '✏️ Improve' },
+        { id: 'translate', label: '🌐 Translate' },
+        { id: 'image', label: '🎨 Image' },
         { id: 'settings', label: '⚙ API' },
       ]" :key="m.id"
         :class="['ai-mode-btn', activeMode === m.id && 'active']"
@@ -723,6 +765,65 @@ async function runFreePrompt() {
           <span v-if="aiStore.isGenerating" class="spinner" />
           {{ aiStore.isGenerating ? 'Processing…' : 'Generate' }}
         </button>
+      </template>
+
+      <!-- Translate -->
+      <template v-else-if="activeMode === 'translate'">
+        <div v-if="selectedEl?.content?.text" class="selected-text-preview">
+          <div class="form-label" style="margin-bottom:var(--space-1)">Selected Text</div>
+          <div class="text-preview">{{ selectedEl.content.text.slice(0,120) }}{{ selectedEl.content.text.length > 120 ? '…' : '' }}</div>
+        </div>
+        <p v-else class="ai-hint">Select a text element on the canvas to translate it.</p>
+        
+        <div class="form-group" style="margin-top:var(--space-3); margin-bottom:var(--space-3)">
+          <label class="form-label">Target Language</label>
+          <select v-model="targetLang" class="select">
+            <option value="Spanish">Spanish</option>
+            <option value="French">French</option>
+            <option value="German">German</option>
+            <option value="Italian">Italian</option>
+            <option value="Portuguese">Portuguese</option>
+            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+            <option value="Japanese">Japanese</option>
+            <option value="Arabic">Arabic</option>
+          </select>
+        </div>
+        
+        <button class="btn btn-primary w-full ai-generate-btn" :disabled="aiStore.isGenerating || !selectedEl?.content?.text" @click="generateTranslation">
+          <span v-if="aiStore.isGenerating" class="spinner" />
+          {{ aiStore.isGenerating ? 'Translating…' : 'Translate Text' }}
+        </button>
+
+        <div v-if="result" class="improve-result-wrap" style="margin-top: var(--space-4)">
+          <div class="result-header">
+            <span class="form-label">Translation Result</span>
+            <div class="result-actions">
+              <button class="btn btn-ghost btn-sm" @click="navigator.clipboard.writeText(result)">Copy</button>
+              <button class="btn btn-primary btn-sm" @click="applyTranslation" :disabled="!selectedEl">Apply</button>
+            </div>
+          </div>
+          <div class="textarea result-display">{{ result }}</div>
+        </div>
+      </template>
+
+      <!-- Image Generation -->
+      <template v-else-if="activeMode === 'image'">
+        <p class="ai-hint" style="margin-bottom:var(--space-3)">Generate distinct educational visual assets instantly. The image will be added directly to your slide.</p>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Image Description</label>
+          <textarea v-model="imageTopic" class="textarea" style="min-height:100px" placeholder="Describe the image (e.g. 'A futuristic city skyline at sunset in a vibrant retro style')" />
+        </div>
+        <button class="btn btn-primary w-full ai-generate-btn" :disabled="aiStore.isGenerating || !imageTopic" @click="generateAiImage">
+          <span v-if="aiStore.isGenerating" class="spinner" />
+          {{ aiStore.isGenerating ? 'Generating Image…' : 'Generate & Insert' }}
+        </button>
+
+        <div v-if="result" class="improve-result-wrap" style="margin-top: var(--space-4)">
+          <div class="result-header">
+            <span class="form-label">Status</span>
+          </div>
+          <div class="textarea result-display" style="color: var(--color-primary)">{{ result }}</div>
+        </div>
       </template>
 
       <!-- Settings -->

@@ -77,6 +77,10 @@ export const useEditorStore = defineStore('editor', () => {
       selectedElementIds.value = id ? [id] : []
     }
   }
+  
+  function setSelection(ids) {
+    selectedElementIds.value = ids
+  }
 
   function clearSelection() {
     selectedElementIds.value = []
@@ -149,7 +153,7 @@ export const useEditorStore = defineStore('editor', () => {
     showSlidePanel,
     clipboard, isDragging, isResizing, resizeHandle, panX, panY,
     hasSelection, multiSelection,
-    setProject, setCurrentSlide, selectElement, clearSelection,
+    setProject, setCurrentSlide, selectElement, setSelection, clearSelection,
     setActiveTool, setRightPanel, setZoom, zoomIn, zoomOut, zoomReset,
     toggleGrid, toggleSnap, toggleSlidePanel, pushHistory, canUndo, canRedo, undo, redo,
     setClipboard,
