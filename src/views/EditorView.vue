@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -24,6 +24,7 @@ const authStore = useAuthStore()
 const projectId = computed(() => route.params.id)
 const project = computed(() => projectStore.getProject(projectId.value))
 const slides = computed(() => [...(project.value?.slides || [])].sort((a, b) => a.order - b.order))
+const imageInputRef = ref(null)
 
 let isUndoing = false
 let historyTimeout = null
@@ -156,6 +157,54 @@ function preview() {
   router.push({ name: 'preview', params: { id: projectId.value } })
 }
 
+function addImageToCurrentSlide(src, fileName = 'Image') {
+  if (!editorStore.projectId || !editorStore.currentSlideId || !src) return
+
+  const image = new Image()
+  image.onload = () => {
+    const maxWidth = 420
+    const maxHeight = 280
+    const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1)
+    const width = Math.max(120, Math.round(image.width * ratio))
+    const height = Math.max(80, Math.round(image.height * ratio))
+    const x = Math.max(24, Math.round((960 - width) / 2))
+    const y = Math.max(24, Math.round((540 - height) / 2))
+
+    const created = projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
+      x,
+      y,
+      width,
+      height,
+      content: {
+        src,
+        alt: fileName,
+        objectFit: 'cover',
+      },
+    })
+
+    if (created) {
+      editorStore.selectElement(created.id)
+      editorStore.setRightPanel('properties')
+      editorStore.setActiveTool('select')
+    }
+  }
+  image.src = src
+}
+
+function handleImageUpload(event) {
+  const [file] = Array.from(event.target.files || [])
+  if (!file || !file.type.startsWith('image/')) return
+
+  const reader = new FileReader()
+  reader.onload = () => addImageToCurrentSlide(String(reader.result || ''), file.name)
+  reader.readAsDataURL(file)
+  event.target.value = ''
+}
+
+function openImagePicker() {
+  imageInputRef.value?.click()
+}
+
 const authoringOptions = [
   { id: 'text', label: 'Text' },
   { id: 'resources', label: 'Resources' },
@@ -190,7 +239,7 @@ function handleAuthoringOption(id) {
     return
   }
   if (id === 'insert') {
-    editorStore.setActiveTool('select')
+    openImagePicker()
     return
   }
   if (id === 'style') {
@@ -213,7 +262,7 @@ function isAuthoringOptionActive(id) {
   if (id === 'interactive-elements') return ['hotspot', 'button'].includes(editorStore.activeTool)
   if (id === 'interactive-questions') return editorStore.activeTool === 'quiz'
   if (id === 'widgets') return ['shape', 'video', 'audio'].includes(editorStore.activeTool)
-  if (id === 'insert') return editorStore.activeTool === 'select'
+  if (id === 'insert') return false
   if (id === 'style' || id === 'background') return editorStore.rightPanelTab === 'properties'
   if (id === 'pages') return editorStore.showSlidePanel
   return false
@@ -222,6 +271,14 @@ function isAuthoringOptionActive(id) {
 
 <template>
   <div class="editor-view" v-if="project">
+    <input
+      ref="imageInputRef"
+      type="file"
+      accept="image/*"
+      class="sr-only"
+      @change="handleImageUpload"
+    />
+
     <!-- Top Bar -->
     <header class="editor-topbar">
       <div class="topbar-left">

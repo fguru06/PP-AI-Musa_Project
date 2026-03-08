@@ -74,6 +74,7 @@ const isDragging = ref(false)
 const selectionStart = ref({ x: 0, y: 0 })
 const selectionCurrent = ref({ x: 0, y: 0 })
 const isSelecting = ref(false)
+const isImageDragOver = ref(false)
 
 const selectionBox = computed(() => {
   if (!isSelecting.value) return null
@@ -90,6 +91,75 @@ function onCanvasClick(e) {
   if (!isSelecting.value && (e.target === canvasRef.value || e.target === e.currentTarget)) {
     editorStore.clearSelection()
   }
+}
+
+function hasImageFiles(dataTransfer) {
+  if (!dataTransfer) return false
+  return Array.from(dataTransfer.files || []).some(file => file.type.startsWith('image/'))
+}
+
+function addDroppedImage(file, clientX, clientY) {
+  if (!file || !file.type.startsWith('image/')) return
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    const src = String(reader.result || '')
+    if (!src) return
+
+    const image = new Image()
+    image.onload = () => {
+      const rect = canvasRef.value.getBoundingClientRect()
+      const dropX = (clientX - rect.left) / editorStore.zoomLevel
+      const dropY = (clientY - rect.top) / editorStore.zoomLevel
+      const maxWidth = 420
+      const maxHeight = 280
+      const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1)
+      const width = Math.max(120, Math.round(image.width * ratio))
+      const height = Math.max(80, Math.round(image.height * ratio))
+      const x = Math.max(0, Math.min(CANVAS_W - width, Math.round(dropX - width / 2)))
+      const y = Math.max(0, Math.min(CANVAS_H - height, Math.round(dropY - height / 2)))
+
+      const created = projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
+        x,
+        y,
+        width,
+        height,
+        content: {
+          src,
+          alt: file.name,
+          objectFit: 'cover',
+        },
+      })
+
+      if (created) {
+        editorStore.selectElement(created.id)
+        editorStore.setActiveTool('select')
+        editorStore.setRightPanel('properties')
+      }
+    }
+    image.src = src
+  }
+  reader.readAsDataURL(file)
+}
+
+function onCanvasDragOver(event) {
+  if (!hasImageFiles(event.dataTransfer)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+  isImageDragOver.value = true
+}
+
+function onCanvasDragLeave(event) {
+  if (event.currentTarget?.contains(event.relatedTarget)) return
+  isImageDragOver.value = false
+}
+
+function onCanvasDropFile(event) {
+  if (!hasImageFiles(event.dataTransfer)) return
+  event.preventDefault()
+  isImageDragOver.value = false
+  const file = Array.from(event.dataTransfer.files || []).find(item => item.type.startsWith('image/'))
+  if (file) addDroppedImage(file, event.clientX, event.clientY)
 }
 
 // Click/drop to add new element or start select marquee
@@ -301,6 +371,9 @@ function goNextSlide() {
           }"
           @click="onCanvasClick"
           @mousedown="onCanvasMouseDown"
+          @dragover="onCanvasDragOver"
+          @dragleave="onCanvasDragLeave"
+          @drop="onCanvasDropFile"
           @contextmenu.prevent
         >
           <!-- Elements -->
@@ -319,9 +392,9 @@ function goNextSlide() {
 
           <!-- Drop hint when tool is active -->
           <div
-            v-if="editorStore.activeTool !== 'select'"
+            v-if="editorStore.activeTool !== 'select' || isImageDragOver"
             class="drop-hint"
-          >Click anywhere to add {{ editorStore.activeTool }}</div>
+          >{{ isImageDragOver ? 'Drop image to insert it on this slide' : `Click anywhere to add ${editorStore.activeTool}` }}</div>
           
           <!-- Selection Marquee -->
           <div
