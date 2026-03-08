@@ -307,6 +307,9 @@ Make it suitable for AI image generation (DALL-E style). Be specific about style
         { question: 'Which strategy leads to the best long-term retention of this material?', options: ['Cramming the night before', 'Spaced repetition and active recall', 'Reading passively multiple times', 'Watching videos only'], correctIndex: 1, explanation: 'Spaced repetition and active recall are scientifically proven to maximize long-term retention.', difficulty: 'intermediate', type: 'multiple-choice' },
       ]),
       voiceover: "Welcome to this lesson. In this section, we'll explore the key concepts that will help you understand the topic better. Pay close attention to the main points as we go through them one by one.",
+      translation: `[Translated text for: ${topic}]\n\nLas mejores prÃ¡cticas garantizan la seguridad, la eficiencia y el rendimiento a largo plazo en este dominio.`,
+      improve: `Here is a clearer, more engaging version of your text:\n\nUnderstanding the core components helps you diagnose and solve complex problems much more effectively.`,
+      imagePrompt: `A high-quality, professional educational illustration about: "${topic}". Clean modern vector art style, bright colors, visually engaging, masterpiece.`,
       default: "This is a sample AI-generated response. Configure your OpenAI API key in the AI settings panel to get real responses.",
     }
     isGenerating.value = true
