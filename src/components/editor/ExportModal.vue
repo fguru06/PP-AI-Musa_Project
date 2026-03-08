@@ -244,27 +244,27 @@ resize();
 show(0);
 `
 
-  const html = \`<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>\${p.name}</title>
+<title>${p.name}</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="progress" id="progress"></div>
 <div class="presentation" id="presentation">
-\${slidesHTML}
+${slidesHTML}
 </div>
 <nav class="nav">
   <button class="nav-btn" onclick="prev()">← Prev</button>
-  <span class="nav-counter" id="counter">1 / \${slides.length}</span>
+  <span class="nav-counter" id="counter">1 / ${slides.length}</span>
   <button class="nav-btn" onclick="next()">Next →</button>
 </nav>
-<script src="script.js"><\\/script>
+<script src="script.js"><\/script>
 </body>
-</html>\`
+</html>`
 
   zip.file('index.html', html)
   zip.file('style.css', css)
@@ -274,7 +274,7 @@ show(0);
   const url = URL.createObjectURL(content)
   const a = document.createElement('a')
   a.href = url
-  a.download = \`\${p.name || 'presentation'}.zip\`
+  a.download = `${p.name || 'presentation'}.zip`
   a.click()
   URL.revokeObjectURL(url)
   exportStatus.value = 'success'
