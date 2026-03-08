@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "firebase": "^12.10.0",
+    "jszip": "^3.10.1",
     "pinia": "^3.0.4",
     "uuid": "^13.0.0",
     "vue": "^3.4.0",

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import JSZip from 'jszip'
 import Modal from '@/components/common/Modal.vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -119,93 +120,161 @@ function buildHTMLSlide(slide, theme) {
   </section>`
 }
 
-function exportHTML() {
+async function exportHTML() {
   const p = project.value
   if (!p) return
-  const slides = [...(p.slides || [])].sort((a, b) => a.order - b.order)
+  exportStatus.value = 'processing'
+  
+  const zip = new JSZip()
+  const assetsFolder = zip.folder('assets')
+  let assetCounter = 0
+  
+  // Helper to fetch and add asset to zip, returns the new local path
+  async function processAsset(url, prefix = 'media') {
+    if (!url || url.startsWith('data:') || url.startsWith('http://localhost') || url.startsWith('blob:')) {
+      // For local blobs or data URIs, might need special handling. Let's try fetching or leave as is if we can't
+      if (url.startsWith('data:')) return url;
+      // In case of blob URLs, we can fetch them since they are in the same context
+    }
+    
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      
+      let ext = 'bin'
+      const mime = blob.type
+      if (mime.includes('image/png')) ext = 'png'
+      else if (mime.includes('image/jpeg')) ext = 'jpg'
+      else if (mime.includes('image/gif')) ext = 'gif'
+      else if (mime.includes('image/svg')) ext = 'svg'
+      else if (mime.includes('image/webp')) ext = 'webp'
+      else if (mime.includes('video/mp4')) ext = 'mp4'
+      else if (mime.includes('audio/mpeg')) ext = 'mp3'
+      
+      // Fallbacks based on URL extension
+      if (ext === 'bin') {
+         const match = url.match(/\\.([a-zA-Z0-9]+)(\\?.*)?$/)
+         if (match) ext = match[1]
+      }
+
+      assetCounter++
+      const filename = `${prefix}_${assetCounter}.${ext}`
+      assetsFolder.file(filename, blob)
+      return `assets/${filename}`
+    } catch (err) {
+      console.warn('Could not fetch asset:', url, err)
+      return url // fallback to original
+    }
+  }
+
+  // Clone project slides so we don't mutate state
+  const slides = JSON.parse(JSON.stringify([...(p.slides || [])])).sort((a, b) => a.order - b.order)
+
+  // Pre-process assets in slides
+  for (const s of slides) {
+    if (s.backgroundType === 'image' && s.backgroundImage) {
+      s.backgroundImage = await processAsset(s.backgroundImage, 'bg')
+    }
+    for (const el of s.elements || []) {
+      if (el.type === 'image' && el.content?.src) {
+        el.content.src = await processAsset(el.content.src, 'img')
+      }
+      if (el.type === 'video' && el.content?.src && !el.content.src.includes('youtube') && !el.content.src.includes('youtu.be')) {
+        el.content.src = await processAsset(el.content.src, 'vid')
+      }
+      if (el.type === 'audio' && el.content?.src) {
+        el.content.src = await processAsset(el.content.src, 'aud')
+      }
+    }
+  }
+
   const slidesHTML = slides.map(s => buildHTMLSlide(s, p.theme)).join('\n')
 
-  const html = `<!DOCTYPE html>
+  const css = `
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: ${p.theme?.fontFamily || 'Inter, sans-serif'}; overflow: hidden; }
+.presentation { position: relative; }
+.slide { display: none; }
+.slide.active { display: block; }
+.nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; z-index: 1000; }
+.nav-btn { background: rgba(255,255,255,.15); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.2); color: #fff; padding: 8px 20px; border-radius: 999px; cursor: pointer; font-size: 14px; font-weight: 600; transition: background .15s; }
+.nav-btn:hover { background: rgba(255,255,255,.3); }
+.nav-counter { color: rgba(255,255,255,.7); font-size: 13px; min-width: 60px; text-align: center; }
+.progress { position: fixed; top: 0; left: 0; height: 3px; background: ${p.theme?.primaryColor || '#6c47ff'}; transition: width .3s ease; z-index: 1001; }
+`
+
+  const js = `
+var current = 0;
+var slides = document.querySelectorAll('.slide');
+var total = slides.length;
+
+function show(idx) {
+  slides.forEach(function(s, i) { s.classList.toggle('active', i === idx); });
+  document.getElementById('counter').textContent = (idx + 1) + ' / ' + total;
+  document.getElementById('progress').style.width = ((idx + 1) / total * 100) + '%';
+  current = idx;
+}
+
+function next() { if (current < total - 1) show(current + 1); }
+function prev() { if (current > 0) show(current - 1); }
+
+function checkAnswer(el, correct, fbId, explanation) {
+  var fb = document.getElementById(fbId);
+  var isCorrect = parseInt(el.value) === correct;
+  fb.style.display = 'block';
+  fb.style.background = isCorrect ? '#dcfce7' : '#fee2e2';
+  fb.style.color = isCorrect ? '#166534' : '#991b1b';
+  fb.textContent = isCorrect ? '✓ Correct!' : '✗ Incorrect. ' + (explanation || 'Try again.');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); next(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); prev(); }
+});
+
+// Scale to window
+function resize() {
+  var el = document.getElementById('presentation');
+  var scale = Math.min(window.innerWidth / 960, window.innerHeight / 540);
+  el.style.transform = 'scale(' + scale + ')';
+  el.style.transformOrigin = 'center center';
+}
+window.addEventListener('resize', resize);
+resize();
+show(0);
+`
+
+  const html = \`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${p.name}</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: ${p.theme?.fontFamily || 'Inter, sans-serif'}; overflow: hidden; }
-  .presentation { position: relative; }
-  .slide { display: none; }
-  .slide.active { display: block; }
-  .nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; z-index: 1000; }
-  .nav-btn { background: rgba(255,255,255,.15); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.2); color: #fff; padding: 8px 20px; border-radius: 999px; cursor: pointer; font-size: 14px; font-weight: 600; transition: background .15s; }
-  .nav-btn:hover { background: rgba(255,255,255,.3); }
-  .nav-counter { color: rgba(255,255,255,.7); font-size: 13px; min-width: 60px; text-align: center; }
-  .progress { position: fixed; top: 0; left: 0; height: 3px; background: ${p.theme?.primaryColor || '#6c47ff'}; transition: width .3s ease; z-index: 1001; }
-  @media (max-width: 960px) {
-    .presentation { transform-origin: top center; }
-  }
-</style>
+<title>\${p.name}</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="progress" id="progress"></div>
 <div class="presentation" id="presentation">
-${slidesHTML}
+\${slidesHTML}
 </div>
 <nav class="nav">
   <button class="nav-btn" onclick="prev()">← Prev</button>
-  <span class="nav-counter" id="counter">1 / ${slides.length}</span>
+  <span class="nav-counter" id="counter">1 / \${slides.length}</span>
   <button class="nav-btn" onclick="next()">Next →</button>
 </nav>
-<script>
-  var current = 0;
-  var slides = document.querySelectorAll('.slide');
-  var total = slides.length;
-  
-  function show(idx) {
-    slides.forEach(function(s, i) { s.classList.toggle('active', i === idx); });
-    document.getElementById('counter').textContent = (idx + 1) + ' / ' + total;
-    document.getElementById('progress').style.width = ((idx + 1) / total * 100) + '%';
-    current = idx;
-  }
-  
-  function next() { if (current < total - 1) show(current + 1); }
-  function prev() { if (current > 0) show(current - 1); }
-  
-  function checkAnswer(el, correct, fbId, explanation) {
-    var fb = document.getElementById(fbId);
-    var isCorrect = parseInt(el.value) === correct;
-    fb.style.display = 'block';
-    fb.style.background = isCorrect ? '#dcfce7' : '#fee2e2';
-    fb.style.color = isCorrect ? '#166534' : '#991b1b';
-    fb.textContent = isCorrect ? '✓ Correct!' : '✗ Incorrect. ' + (explanation || 'Try again.');
-  }
-  
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); next(); }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); prev(); }
-  });
-  
-  // Scale to window
-  function resize() {
-    var el = document.getElementById('presentation');
-    var scale = Math.min(window.innerWidth / 960, window.innerHeight / 540);
-    el.style.transform = 'scale(' + scale + ')';
-    el.style.transformOrigin = 'top center';
-    el.style.marginTop = ((window.innerHeight - 540 * scale) / 2) + 'px';
-  }
-  window.addEventListener('resize', resize);
-  resize();
-  show(0);
-<\/script>
+<script src="script.js"><\\/script>
 </body>
-</html>`
+</html>\`
 
-  const blob = new Blob([html], { type: 'text/html' })
-  const url = URL.createObjectURL(blob)
+  zip.file('index.html', html)
+  zip.file('style.css', css)
+  zip.file('script.js', js)
+
+  const content = await zip.generateAsync({ type: 'blob' })
+  const url = URL.createObjectURL(content)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${p.name || 'presentation'}.html`
+  a.download = \`\${p.name || 'presentation'}.zip\`
   a.click()
   URL.revokeObjectURL(url)
   exportStatus.value = 'success'
