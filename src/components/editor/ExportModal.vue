@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import JSZip from 'jszip'
 import Modal from '@/components/common/Modal.vue'
 import { useEditorStore } from '@/stores/editorStore'
@@ -12,7 +12,16 @@ const authStore = useAuthStore()
 
 const project = computed(() => projectStore.getProject(editorStore.projectId))
 const activeTab = ref('json') // 'json' | 'html' | 'scorm'
-const exportStatus = ref('') // '' | 'success' | 'error'
+const exportStatus = ref('') // '' | 'success' | 'error' | 'processing'
+
+const exportFileName = ref('')
+const exportIncludeAssets = ref(true)
+
+watch(project, (p) => {
+  if (p && !exportFileName.value) {
+    exportFileName.value = p.name || 'presentation'
+  }
+}, { immediate: true })
 
 function exportJSON() {
   const json = projectStore.exportProject(editorStore.projectId)
@@ -21,7 +30,7 @@ function exportJSON() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${project.value?.name || 'project'}.learnforge.json`
+  a.download = `${exportFileName.value || 'project'}.learnforge.json`
   a.click()
   URL.revokeObjectURL(url)
   exportStatus.value = 'success'
@@ -170,20 +179,22 @@ async function exportHTML() {
   // Clone project slides so we don't mutate state
   const slides = JSON.parse(JSON.stringify([...(p.slides || [])])).sort((a, b) => a.order - b.order)
 
-  // Pre-process assets in slides
-  for (const s of slides) {
-    if (s.backgroundType === 'image' && s.backgroundImage) {
-      s.backgroundImage = await processAsset(s.backgroundImage, 'bg')
-    }
-    for (const el of s.elements || []) {
-      if (el.type === 'image' && el.content?.src) {
-        el.content.src = await processAsset(el.content.src, 'img')
+  // Pre-process assets in slides if the option is checked
+  if (exportIncludeAssets.value) {
+    for (const s of slides) {
+      if (s.backgroundType === 'image' && s.backgroundImage) {
+        s.backgroundImage = await processAsset(s.backgroundImage, 'bg')
       }
-      if (el.type === 'video' && el.content?.src && !el.content.src.includes('youtube') && !el.content.src.includes('youtu.be')) {
-        el.content.src = await processAsset(el.content.src, 'vid')
-      }
-      if (el.type === 'audio' && el.content?.src) {
-        el.content.src = await processAsset(el.content.src, 'aud')
+      for (const el of s.elements || []) {
+        if (el.type === 'image' && el.content?.src) {
+          el.content.src = await processAsset(el.content.src, 'img')
+        }
+        if (el.type === 'video' && el.content?.src && !el.content.src.includes('youtube') && !el.content.src.includes('youtu.be')) {
+          el.content.src = await processAsset(el.content.src, 'vid')
+        }
+        if (el.type === 'audio' && el.content?.src) {
+          el.content.src = await processAsset(el.content.src, 'aud')
+        }
       }
     }
   }
@@ -249,7 +260,7 @@ show(0);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${p.name}</title>
+<title>${exportFileName.value || 'presentation'}</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -274,7 +285,7 @@ ${slidesHTML}
   const url = URL.createObjectURL(content)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${p.name || 'presentation'}.zip`
+  a.download = `${exportFileName.value || 'presentation'}.zip`
   a.click()
   URL.revokeObjectURL(url)
   exportStatus.value = 'success'
@@ -321,6 +332,14 @@ ${slidesHTML}
             <p>Export your complete project as a JSON file. Use this to back up your work, share it with collaborators, or import it into another LearnForge instance.</p>
           </div>
         </div>
+        
+        <div class="export-options" style="margin-bottom: 20px;">
+          <div class="form-group">
+            <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#333;">File Name</label>
+            <input type="text" v-model="exportFileName" class="inp" placeholder="My Presentation" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd;" />
+          </div>
+        </div>
+
         <div class="export-meta">
           <div class="meta-item"><span>Project</span><strong>{{ project?.name }}</strong></div>
           <div class="meta-item"><span>Slides</span><strong>{{ project?.slides?.length || 0 }}</strong></div>
@@ -343,6 +362,17 @@ ${slidesHTML}
             <p>Export as a self-contained HTML file that works in any browser. Includes all slides, interactions, and quiz functionality. No internet connection required.</p>
           </div>
         </div>
+
+        <div class="export-options" style="margin-bottom: 20px;">
+          <div class="form-group">
+            <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#333;">Package Name</label>
+            <input type="text" v-model="exportFileName" class="inp" placeholder="My Presentation" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd;" />
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" v-model="exportIncludeAssets" /> Download external assets (Images/Audio/Video) locally for offline use
+          </label>
+        </div>
+
         <div class="export-features">
           <div class="feature-item">✓ Keyboard navigation (arrow keys)</div>
           <div class="feature-item">✓ Click-to-reveal hotspots</div>
@@ -377,9 +407,15 @@ ${slidesHTML}
         </div>
       </template>
 
-      <!-- Success message -->
+      <!-- Status messages -->
       <Transition name="fade">
-        <div v-if="exportStatus === 'success'" class="export-success">
+        <div v-if="exportStatus === 'processing'" class="export-success" style="background:#e0f2fe;color:#166534;border-color:#bbf7d0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="spin" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+          </svg>
+          Generating package... Please wait.
+        </div>
+        <div v-else-if="exportStatus === 'success'" class="export-success">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
@@ -451,4 +487,6 @@ ${slidesHTML}
   font-size: var(--text-sm);
   color: var(--color-success);
 }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
 </style>
