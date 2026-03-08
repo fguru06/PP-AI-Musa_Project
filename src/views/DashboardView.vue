@@ -322,41 +322,42 @@ function setRailSection(section) {
       <template v-if="activeRail === 'templates'">
         <section id="home-anchor" class="hero templates-hero">
           <div class="hero-top">
-            <div v-if="currentUser" class="hero-user">
-              <span class="user-chip">{{ currentUser.authTypeLabel }}</span>
-              <button class="btn btn-ghost btn-sm" type="button" @click="signOut">Sign out</button>
+            <div v-if="currentUser" class="hero-user g-rounded">
+              <span class="user-chip-new">{{ currentUser.authTypeLabel }}</span>
+              <button class="btn btn-ghost-text" type="button" @click="signOut">Sign out</button>
             </div>
-            <div v-else class="hero-user">
-              <button class="btn btn-secondary btn-sm" type="button" @click="openAuthModal('signin')">Log In</button>
-              <button class="btn btn-primary btn-sm" type="button" @click="openAuthModal('signup')">Sign Up</button>
+            <div v-else class="hero-user g-rounded">
+              <button class="btn btn-ghost-text" type="button" @click="openAuthModal('signin')">Log In</button>
+              <button class="btn btn-ghost-text" type="button" @click="openAuthModal('signup')">Sign Up</button>
             </div>
-            <button class="btn btn-secondary btn-sm" style="color:#d97706;border-color:rgba(217,119,6,0.3);background:#fffbeb;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-              Upgrade to Premium
-            </button>
+            
             <div class="hero-actions">
-              <button class="btn btn-secondary btn-sm" @click="openImportModal">Import</button>
+              <button class="btn g-premium-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                Upgrade to Premium
+              </button>
+              <button class="btn g-outline-btn" @click="openImportModal">Import</button>
             </div>
           </div>
 
-          <h1 class="hero-title">Choose how to create</h1>
-          <div class="hero-search">
-            <input v-model="searchQuery" class="search-input" placeholder="Describe what you're looking for" />
-            <button class="hero-search-btn" type="button" aria-label="Search">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <h1 class="hero-title-g">Choose how to create</h1>
+          <div class="search-bar-g">
+            <input v-model="searchQuery" class="search-input-g" placeholder="Describe what you're looking for" />
+            <button class="search-btn-g" type="button" aria-label="Search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
                 <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
               </svg>
             </button>
           </div>
         </section>
 
-        <section id="templates-anchor" class="toolbar-row">
-          <div class="chip-list">
-            <button class="chip" :class="activeCategory === 'all' && 'active'" @click="activeCategory = 'all'" type="button">All</button>
-            <button v-for="item in categories" :key="item.value" class="chip" :class="activeCategory === item.value && 'active'" @click="activeCategory = item.value" type="button">{{ item.label }}</button>
+        <section id="templates-anchor" class="toolbar-row-g">
+          <div class="chip-list-g">
+            <button class="chip-g" :class="activeCategory === 'all' && 'active'" @click="activeCategory = 'all'" type="button">All</button>
+            <button v-for="item in categories" :key="item.value" class="chip-g" :class="activeCategory === item.value && 'active'" @click="activeCategory = item.value" type="button">{{ item.label }}</button>
           </div>
-          <button class="btn btn-secondary btn-sm" style="border-radius: 99px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+          <button class="btn g-outline-btn ai-btn-g">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
             Create quiz with AI
           </button>
         </section>
