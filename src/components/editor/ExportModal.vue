@@ -32,6 +32,11 @@ function exportJSON() {
   a.href = url
   a.download = `${exportFileName.value || 'project'}.learnforge.json`
   a.click()
+  URL.revokeObjectURL(url)
+  exportStatus.value = 'success'
+  setTimeout(() => exportStatus.value = '', 3000)
+}
+
 function sanitizeExportName(name, fallback = 'presentation') {
   const value = String(name || fallback).trim()
   return value.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim() || fallback
@@ -1197,11 +1202,6 @@ function buildRuntimeJS() {
   }
 })();
 `
-}
-  return `
-  <section class="slide" style="position:relative;width:960px;height:540px;background:${bg};overflow:hidden;flex-shrink:0;" data-slide="${slide.id}">
-    ${elHTML}
-  </section>`
 }
 
 async function exportHTML() {
