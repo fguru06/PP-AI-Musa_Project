@@ -388,7 +388,10 @@ function setRailSection(section) {
             </button>
             <div v-if="currentUser" class="user-info-mini">
               <span class="user-chip">{{ currentUser.authTypeLabel }}</span>
-              <button class="btn btn-primary btn-sm" @click="openNewModal">Create course</button>
+              <div class="user-actions-mini">
+                <button class="btn btn-secondary btn-sm" type="button" @click="signOut">Log out</button>
+                <button class="btn btn-primary btn-sm" @click="openNewModal">Create course</button>
+              </div>
             </div>
             <div v-else>
               <button class="btn btn-secondary btn-sm" @click="openAuthModal('signin')">Sign In</button>

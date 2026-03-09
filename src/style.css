@@ -489,6 +489,12 @@ button, input, select, textarea {
   gap: 12px;
 }
 
+.user-actions-mini {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .home-container, .content-container {
   padding: 32px;
   max-width: 1100px;
