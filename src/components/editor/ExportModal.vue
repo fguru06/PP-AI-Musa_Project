@@ -657,7 +657,7 @@ function buildRuntimeJS() {
   function resolveSlideTarget(value) {
     var raw = String(value == null ? '' : value).trim();
     if (!raw) return null;
-    if (/^\d+$/.test(raw)) {
+    if (String(Number(raw)) === raw && Number.isInteger(Number(raw))) {
       var numericIndex = Number(raw) - 1;
       if (numericIndex >= 0 && numericIndex < slideNodes.length) return numericIndex;
     }
@@ -1014,15 +1014,47 @@ function buildRuntimeJS() {
     if (!src) return '';
     if (src.includes('youtube.com/embed/')) return src;
     if (src.includes('youtu.be/') || src.includes('youtube.com/watch')) {
-      var ytMatch = src.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
-      return ytMatch ? 'https://www.youtube.com/embed/' + ytMatch[1] : '';
+      var videoId = extractYouTubeId(src);
+      return videoId ? 'https://www.youtube.com/embed/' + videoId : '';
     }
     if (src.includes('player.vimeo.com/video/')) return src;
     if (src.includes('vimeo.com/')) {
-      var vimeoMatch = src.match(/vimeo\.com\/(?:video\/)?(\d+)/);
-      return vimeoMatch ? 'https://player.vimeo.com/video/' + vimeoMatch[1] : '';
+      var vimeoId = extractVimeoId(src);
+      return vimeoId ? 'https://player.vimeo.com/video/' + vimeoId : '';
     }
     return '';
+  }
+
+  function extractYouTubeId(src) {
+    if (src.includes('youtu.be/')) {
+      var shortPart = src.split('youtu.be/')[1] || '';
+      return stripAfterDelimiters(shortPart) || '';
+    }
+    if (src.includes('v=')) {
+      var queryPart = src.split('v=')[1] || '';
+      return stripAfterDelimiters(queryPart) || '';
+    }
+    return '';
+  }
+
+  function extractVimeoId(src) {
+    var parts = src.split('/').filter(Boolean);
+    for (var index = parts.length - 1; index >= 0; index--) {
+      var part = stripAfterDelimiters(parts[index]);
+      if (String(Number(part)) === part && Number.isInteger(Number(part))) {
+        return part;
+      }
+    }
+    return '';
+  }
+
+  function stripAfterDelimiters(value) {
+    var end = value.length;
+    ['?', '&', '#', '/'].forEach(function (token) {
+      var index = value.indexOf(token);
+      if (index !== -1 && index < end) end = index;
+    });
+    return value.slice(0, end);
   }
 
   function renderAudio(content) {
