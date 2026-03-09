@@ -30,7 +30,7 @@ function exportJSON() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${exportFileName.value || 'project'}.learnforge.json`
+  a.download = `${exportFileName.value || 'project'}.mediasurf.json`
   a.click()
   URL.revokeObjectURL(url)
   exportStatus.value = 'success'
@@ -502,7 +502,7 @@ function buildRuntimeJS() {
   try {
     project = JSON.parse(dataNode.textContent || '{}');
   } catch (error) {
-    console.error('LearnForge export could not read project data.', error);
+    console.error('MediaSurf export could not read project data.', error);
     var mountError = document.getElementById('presentation');
     if (mountError) mountError.innerHTML = '<div class="lf-empty">Unable to load exported slides.</div>';
     return;
@@ -1403,7 +1403,7 @@ ${runtimeScriptTag}
           <div class="export-icon">📦</div>
           <div>
             <h4>JSON Project File</h4>
-            <p>Export your complete project as a JSON file. Use this to back up your work, share it with collaborators, or import it into another LearnForge instance.</p>
+            <p>Export your complete project as a JSON file. Use this to back up your work, share it with collaborators, or import it into another MediaSurf instance.</p>
           </div>
         </div>
         
