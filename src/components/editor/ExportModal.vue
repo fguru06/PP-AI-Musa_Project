@@ -1198,7 +1198,10 @@ function buildRuntimeJS() {
   }
 
   function cssEscape(value) {
-    return String(value).replace(/([ #;?%&,.+*~\':"!^$\[\]()=>|\/])/g, '\\$1');
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      return CSS.escape(String(value));
+    }
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
   }
 })();
 `
