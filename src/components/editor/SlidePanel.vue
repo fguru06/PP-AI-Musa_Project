@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
+import { getProjectCanvasSize } from '@/lib/canvas'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
 
 const project = computed(() => projectStore.getProject(editorStore.projectId))
+const canvasSize = computed(() => getProjectCanvasSize(project.value))
 const slides = computed(() => project.value?.slides?.slice().sort((a, b) => a.order - b.order) || [])
 
 const contextMenu = ref({ show: false, x: 0, y: 0, slideId: null })
@@ -128,10 +130,10 @@ function getBgStyle(slide) {
             :key="el.id"
             class="mini-element"
             :style="{
-              left: (el.x / 960 * 100) + '%',
-              top: (el.y / 540 * 100) + '%',
-              width: (el.width / 960 * 100) + '%',
-              height: (el.height / 540 * 100) + '%',
+              left: (el.x / canvasSize.width * 100) + '%',
+              top: (el.y / canvasSize.height * 100) + '%',
+              width: (el.width / canvasSize.width * 100) + '%',
+              height: (el.height / canvasSize.height * 100) + '%',
               background: el.type === 'shape' ? el.content?.fillColor : (el.type === 'button' ? 'var(--color-primary)' : 'rgba(0,0,0,.1)'),
               borderRadius: el.type === 'shape' && el.content?.shapeType === 'circle' ? '50%' : undefined,
             }"

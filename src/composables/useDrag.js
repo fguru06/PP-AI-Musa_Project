@@ -76,7 +76,7 @@ export function useResize({ onResize, onEnd, snapToGrid, gridSize, canvasRef }) 
   function getCanvasScale() {
     if (!canvasRef?.value) return 1
     const rect = canvasRef.value.getBoundingClientRect()
-    return rect.width / 960
+    return rect.width / (canvasRef.value.offsetWidth || rect.width)
   }
 
   function snap(val, grid) {

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
+import { CANVAS_SIZE_PRESETS, formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset, normalizeCanvasSettings } from '@/lib/canvas'
 import MotionLibraryPanel from './MotionLibraryPanel.vue'
 
 const editorStore = useEditorStore()
@@ -18,6 +19,11 @@ const projectSettings = computed(() => ({
   motionPresets: [],
   ...(project.value?.settings || {}),
 }))
+const canvasSize = computed(() => getProjectCanvasSize(projectSettings.value))
+const selectedCanvasPreset = computed(() => matchCanvasSizePreset(projectSettings.value))
+const canvasAspectLabel = computed(() => formatCanvasAspectRatio(canvasSize.value.width, canvasSize.value.height))
+const maintainCanvasProportions = ref(true)
+const slideSettingsTab = ref('canvas')
 const projectMotionPresets = computed(() => Array.isArray(projectSettings.value.motionPresets) ? projectSettings.value.motionPresets : [])
 const singleMotionPresets = computed(() => projectMotionPresets.value.filter((preset) => preset.scope !== 'group'))
 const groupMotionPresets = computed(() => projectMotionPresets.value.filter((preset) => preset.scope === 'group'))
@@ -107,12 +113,42 @@ function updateSlide(patch) {
 
 function updateProjectSettings(patch) {
   if (!project.value) return
+  const nextSettings = {
+    ...projectSettings.value,
+    ...patch,
+  }
   projectStore.updateProject(editorStore.projectId, {
     settings: {
-      ...projectSettings.value,
-      ...patch,
+      ...nextSettings,
+      ...normalizeCanvasSettings(nextSettings),
     },
   })
+}
+
+function applyCanvasPreset(preset) {
+  updateProjectSettings({
+    slideWidth: preset.width,
+    slideHeight: preset.height,
+  })
+}
+
+function updateCanvasDimension(dimension, rawValue) {
+  const nextValue = Math.round(Number(rawValue) || 0)
+  if (!nextValue) return
+
+  const nextPatch = { [`slide${dimension === 'width' ? 'Width' : 'Height'}`]: nextValue }
+
+  if (maintainCanvasProportions.value) {
+    const baseWidth = canvasSize.value.width
+    const baseHeight = canvasSize.value.height
+    if (dimension === 'width') {
+      nextPatch.slideHeight = Math.round(nextValue * (baseHeight / baseWidth))
+    } else {
+      nextPatch.slideWidth = Math.round(nextValue * (baseWidth / baseHeight))
+    }
+  }
+
+  updateProjectSettings(nextPatch)
 }
 
 function parsePresetTags(rawTags) {
@@ -710,100 +746,214 @@ const fontFamilies = [
     <!-- === No element selected: show slide properties === -->
     <template v-else-if="!selectedEl">
       <div class="panel-section">
-        <div class="panel-title">Slide Properties</div>
-        <div class="form-group" style="margin-bottom:var(--space-3)">
-          <label class="form-label">Title</label>
-          <input
-            v-model="slideLocal.title"
-            class="input"
-            @input="commitSlide('title', slideLocal.title)"
-          />
+        <div class="slide-settings-tabs">
+          <button
+            type="button"
+            :class="['slide-settings-tab', slideSettingsTab === 'canvas' && 'active']"
+            @click="slideSettingsTab = 'canvas'"
+          >
+            <svg class="slide-settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="3.5" y="5" width="17" height="12" rx="2"></rect>
+              <path d="M8 19h8"></path>
+            </svg>
+            <span>Canvas</span>
+          </button>
+          <button
+            type="button"
+            :class="['slide-settings-tab', slideSettingsTab === 'transitions' && 'active']"
+            @click="slideSettingsTab = 'transitions'"
+          >
+            <svg class="slide-settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M5 7h5"></path>
+              <path d="M5 12h10"></path>
+              <path d="M5 17h14"></path>
+              <path d="M14 7l5 5-5 5"></path>
+            </svg>
+            <span>Transitions</span>
+          </button>
+          <button
+            type="button"
+            :class="['slide-settings-tab', slideSettingsTab === 'navigation' && 'active']"
+            @click="slideSettingsTab = 'navigation'"
+          >
+            <svg class="slide-settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 4v16"></path>
+              <path d="M8 8l4-4 4 4"></path>
+              <path d="M16 16l-4 4-4-4"></path>
+            </svg>
+            <span>Navigation</span>
+          </button>
         </div>
-        <div class="form-group">
-          <label class="form-label">Background</label>
-          <div class="bg-type-tabs">
-            <button
-              v-for="t in ['color','gradient','image']" :key="t"
-              :class="['bg-type-btn', (slide?.backgroundType||'color') === t && 'active']"
-              @click="updateSlide({ backgroundType: t })"
-            >{{ t }}</button>
+        <div v-if="slideSettingsTab === 'canvas'" class="slide-settings-pane">
+          <div class="panel-title">Canvas</div>
+          <div class="form-group" style="margin-bottom:var(--space-3)">
+            <label class="form-label">Title</label>
+            <input
+              v-model="slideLocal.title"
+              class="input"
+              @input="commitSlide('title', slideLocal.title)"
+            />
           </div>
-          <template v-if="(slide?.backgroundType||'color') === 'color'">
-            <div class="color-row">
-              <input type="color" :value="slide?.background || '#ffffff'" @input="updateSlide({ background: $event.target.value })" class="color-input-native" />
-              <input :value="slide?.background || '#ffffff'" class="input" @input="updateSlide({ background: $event.target.value })" style="font-size:var(--text-xs);font-family:var(--font-mono)" />
+          <div class="form-group">
+            <label class="form-label">Background</label>
+            <div class="bg-type-tabs">
+              <button
+                v-for="t in ['color','gradient','image']" :key="t"
+                :class="['bg-type-btn', (slide?.backgroundType||'color') === t && 'active']"
+                @click="updateSlide({ backgroundType: t })"
+              >{{ t }}</button>
             </div>
-          </template>
-          <template v-else-if="slide?.backgroundType === 'gradient'">
-            <input v-model="slideLocal.backgroundGradient" class="input" placeholder="linear-gradient(135deg, #667eea, #764ba2)" @input="updateSlide({ backgroundGradient: slideLocal.backgroundGradient })" />
-          </template>
-          <template v-else>
-            <input v-model="slideLocal.backgroundImage" class="input" placeholder="https://..." @input="updateSlide({ backgroundImage: slideLocal.backgroundImage })" />
-          </template>
+            <template v-if="(slide?.backgroundType||'color') === 'color'">
+              <div class="color-row">
+                <input type="color" :value="slide?.background || '#ffffff'" @input="updateSlide({ background: $event.target.value })" class="color-input-native" />
+                <input :value="slide?.background || '#ffffff'" class="input" @input="updateSlide({ background: $event.target.value })" style="font-size:var(--text-xs);font-family:var(--font-mono)" />
+              </div>
+            </template>
+            <template v-else-if="slide?.backgroundType === 'gradient'">
+              <input v-model="slideLocal.backgroundGradient" class="input" placeholder="linear-gradient(135deg, #667eea, #764ba2)" @input="updateSlide({ backgroundGradient: slideLocal.backgroundGradient })" />
+            </template>
+            <template v-else>
+              <input v-model="slideLocal.backgroundImage" class="input" placeholder="https://..." @input="updateSlide({ backgroundImage: slideLocal.backgroundImage })" />
+            </template>
+          </div>
+
+          <div class="slide-settings-subsection">
+            <div class="panel-title">Select Size</div>
+            <div class="canvas-size-grid">
+              <button
+                v-for="preset in CANVAS_SIZE_PRESETS"
+                :key="preset.id"
+                type="button"
+                :class="['canvas-size-card', selectedCanvasPreset?.id === preset.id && 'active']"
+                @click="applyCanvasPreset(preset)"
+              >
+                <span class="canvas-size-icon-shell">
+                  <span class="canvas-size-thumb" :class="`canvas-size-thumb-${preset.id}`" aria-hidden="true">
+                    <span class="canvas-size-thumb-frame"></span>
+                    <span class="canvas-size-thumb-safe"></span>
+                    <span class="canvas-size-thumb-line canvas-size-thumb-line-top"></span>
+                    <span class="canvas-size-thumb-line canvas-size-thumb-line-bottom"></span>
+                  </span>
+                </span>
+                <span class="canvas-size-name">{{ preset.label }}</span>
+                <span class="canvas-size-ratio">{{ preset.ratioLabel }}</span>
+              </button>
+            </div>
+            <div class="canvas-custom-card">
+              <div class="canvas-custom-header">
+                <span>Custom</span>
+                <span class="field-hint">Current ratio {{ canvasAspectLabel }}</span>
+              </div>
+              <div class="canvas-custom-inputs">
+                <div class="form-group">
+                  <label class="form-label">Width</label>
+                  <div class="canvas-size-input-wrap">
+                    <input
+                      type="number"
+                      min="320"
+                      max="4096"
+                      :value="canvasSize.width"
+                      class="input"
+                      @change="updateCanvasDimension('width', $event.target.value)"
+                    />
+                    <span class="canvas-size-unit">px</span>
+                  </div>
+                </div>
+                <div class="canvas-size-separator">×</div>
+                <div class="form-group">
+                  <label class="form-label">Height</label>
+                  <div class="canvas-size-input-wrap">
+                    <input
+                      type="number"
+                      min="320"
+                      max="4096"
+                      :value="canvasSize.height"
+                      class="input"
+                      @change="updateCanvasDimension('height', $event.target.value)"
+                    />
+                    <span class="canvas-size-unit">px</span>
+                  </div>
+                </div>
+              </div>
+              <label class="check-row canvas-size-lock">
+                <input type="checkbox" v-model="maintainCanvasProportions" />
+                Maintain proportions
+              </label>
+              <div class="field-hint">Canvas size affects the editor, preview, slide thumbnails, and exported HTML package.</div>
+            </div>
+            <div class="canvas-size-callout">
+              <svg class="canvas-size-callout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 10v6"></path>
+                <path d="M12 7h.01"></path>
+              </svg>
+              <span>Changes will be applied to all pages in the project.</span>
+            </div>
+          </div>
+
+          <div class="slide-settings-subsection">
+            <div class="panel-title">Slide Notes</div>
+            <textarea
+              v-model="slideLocal.notes"
+              class="textarea"
+              placeholder="Speaker notes…"
+              style="min-height:80px"
+              @input="commitSlide('notes', slideLocal.notes)"
+            />
+          </div>
         </div>
-      </div>
 
-      <div class="panel-section">
-        <div class="panel-title">Slide Notes</div>
-        <textarea
-          v-model="slideLocal.notes"
-          class="textarea"
-          placeholder="Speaker notes…"
-          style="min-height:80px"
-          @input="commitSlide('notes', slideLocal.notes)"
-        />
-      </div>
-
-      <div class="panel-section">
-        <div class="panel-title">Transition</div>
-        <select :value="slide?.transition || 'none'" class="select" @change="updateSlide({ transition: $event.target.value })">
-          <option value="none">None</option>
-          <option value="fade">Fade</option>
-          <option value="slide">Slide</option>
-          <option value="zoom">Zoom</option>
-          <option value="flip">Flip</option>
-        </select>
-        <div class="form-group" style="margin-top:var(--space-3)">
-          <label class="form-label">Auto-advance Duration (seconds)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.5"
-            :value="slide?.duration ?? 0"
-            class="input"
-            @change="updateSlideDuration($event.target.value)"
-          />
-          <div class="field-hint">Set to 0 to require manual navigation on this slide.</div>
+        <div v-else-if="slideSettingsTab === 'transitions'" class="slide-settings-pane">
+          <div class="panel-title">Transitions</div>
+          <select :value="slide?.transition || 'none'" class="select" @change="updateSlide({ transition: $event.target.value })">
+            <option value="none">None</option>
+            <option value="fade">Fade</option>
+            <option value="slide">Slide</option>
+            <option value="zoom">Zoom</option>
+            <option value="flip">Flip</option>
+          </select>
+          <div class="form-group" style="margin-top:var(--space-3)">
+            <label class="form-label">Auto-advance Duration (seconds)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              :value="slide?.duration ?? 0"
+              class="input"
+              @change="updateSlideDuration($event.target.value)"
+            />
+            <div class="field-hint">Set to 0 to require manual navigation on this slide.</div>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" :checked="Boolean(slide?.advanceOnMediaEnd)" @change="updateSlide({ advanceOnMediaEnd: $event.target.checked })" />
+            Advance when slide media finishes
+          </label>
+          <div class="field-hint">Uses the first playable audio or direct video on the slide. Embedded YouTube/Vimeo iframes cannot report completion here.</div>
         </div>
-        <label class="check-row">
-          <input type="checkbox" :checked="Boolean(slide?.advanceOnMediaEnd)" @change="updateSlide({ advanceOnMediaEnd: $event.target.checked })" />
-          Advance when slide media finishes
-        </label>
-        <div class="field-hint">Uses the first playable audio or direct video on the slide. Embedded YouTube/Vimeo iframes cannot report completion here.</div>
-      </div>
 
-      <div class="panel-section">
-        <div class="panel-title">Playback</div>
-        <label class="check-row">
-          <input type="checkbox" :checked="projectSettings.autoPlay" @change="updateProjectSettings({ autoPlay: $event.target.checked })" />
-          Autoplay preview and exported presentation
-        </label>
-        <label class="check-row">
-          <input type="checkbox" :checked="projectSettings.loop" @change="updateProjectSettings({ loop: $event.target.checked })" />
-          Loop back to the first slide at the end
-        </label>
-        <label class="check-row">
-          <input type="checkbox" :checked="projectSettings.showProgress" @change="updateProjectSettings({ showProgress: $event.target.checked })" />
-          Show progress bar in preview
-        </label>
-        <label class="check-row">
-          <input type="checkbox" :checked="projectSettings.showNavControls" @change="updateProjectSettings({ showNavControls: $event.target.checked })" />
-          Show previous/next and dot navigation
-        </label>
-        <label class="check-row">
-          <input type="checkbox" :checked="projectSettings.allowKeyboardNav" @change="updateProjectSettings({ allowKeyboardNav: $event.target.checked })" />
-          Allow arrow keys and space bar navigation
-        </label>
+        <div v-else class="slide-settings-pane">
+          <div class="panel-title">Navigation</div>
+          <label class="check-row">
+            <input type="checkbox" :checked="projectSettings.autoPlay" @change="updateProjectSettings({ autoPlay: $event.target.checked })" />
+            Autoplay preview and exported presentation
+          </label>
+          <label class="check-row">
+            <input type="checkbox" :checked="projectSettings.loop" @change="updateProjectSettings({ loop: $event.target.checked })" />
+            Loop back to the first slide at the end
+          </label>
+          <label class="check-row">
+            <input type="checkbox" :checked="projectSettings.showProgress" @change="updateProjectSettings({ showProgress: $event.target.checked })" />
+            Show progress bar in preview
+          </label>
+          <label class="check-row">
+            <input type="checkbox" :checked="projectSettings.showNavControls" @change="updateProjectSettings({ showNavControls: $event.target.checked })" />
+            Show previous/next and dot navigation
+          </label>
+          <label class="check-row">
+            <input type="checkbox" :checked="projectSettings.allowKeyboardNav" @change="updateProjectSettings({ allowKeyboardNav: $event.target.checked })" />
+            Allow arrow keys and space bar navigation
+          </label>
+        </div>
       </div>
     </template>
 
@@ -1371,6 +1521,209 @@ const fontFamilies = [
 </template>
 
 <style scoped>
+.canvas-size-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.canvas-size-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 104px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color .18s ease, transform .18s ease, background .18s ease;
+  position: relative;
+  overflow: hidden;
+}
+.canvas-size-card::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(108,71,255,.2), transparent);
+}
+.canvas-size-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-primary) 38%, var(--color-border));
+}
+.canvas-size-card.active {
+  border-color: color-mix(in srgb, var(--color-primary) 58%, white 0%);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-raised));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, transparent);
+}
+.canvas-size-icon-shell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.canvas-size-thumb {
+  position: relative;
+  width: 54px;
+  height: 40px;
+}
+.canvas-size-thumb-frame,
+.canvas-size-thumb-safe,
+.canvas-size-thumb-line {
+  position: absolute;
+  display: block;
+}
+.canvas-size-thumb-frame {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid currentColor;
+  border-radius: 5px;
+  opacity: .82;
+}
+.canvas-size-thumb-safe {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px dashed color-mix(in srgb, currentColor 78%, white 22%);
+  border-radius: 4px;
+  opacity: .55;
+}
+.canvas-size-thumb-line {
+  left: 50%;
+  height: 1px;
+  transform: translateX(-50%);
+  background: rgba(108,71,255,.28);
+  width: 58%;
+}
+.canvas-size-thumb-line-top {
+  top: 9px;
+}
+.canvas-size-thumb-line-bottom {
+  bottom: 9px;
+}
+.canvas-size-thumb-landscape .canvas-size-thumb-frame {
+  width: 34px;
+  height: 20px;
+}
+.canvas-size-thumb-landscape .canvas-size-thumb-safe {
+  width: 28px;
+  height: 16px;
+}
+.canvas-size-thumb-mobile .canvas-size-thumb-frame {
+  width: 18px;
+  height: 30px;
+  border-radius: 6px;
+}
+.canvas-size-thumb-mobile .canvas-size-thumb-frame::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.canvas-size-thumb-mobile .canvas-size-thumb-safe {
+  width: 14px;
+  height: 24px;
+  border-radius: 5px;
+}
+.canvas-size-thumb-infographic .canvas-size-thumb-frame {
+  width: 16px;
+  height: 34px;
+  border-radius: 5px;
+}
+.canvas-size-thumb-infographic .canvas-size-thumb-safe {
+  width: 12px;
+  height: 26px;
+}
+.canvas-size-thumb-square .canvas-size-thumb-frame {
+  width: 24px;
+  height: 24px;
+}
+.canvas-size-thumb-square .canvas-size-thumb-safe {
+  width: 18px;
+  height: 18px;
+}
+.canvas-size-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.canvas-size-ratio {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.canvas-custom-card {
+  margin-top: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.canvas-custom-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.canvas-custom-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+}
+.canvas-size-input-wrap {
+  position: relative;
+}
+.canvas-size-input-wrap .input {
+  padding-right: 34px;
+}
+.canvas-size-unit {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.canvas-size-separator {
+  padding-bottom: 10px;
+  font-size: 20px;
+  color: var(--color-text-muted);
+}
+.canvas-size-lock {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.canvas-size-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: var(--space-3);
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, #67c3f3 16%, var(--color-surface-raised));
+  color: color-mix(in srgb, var(--color-text) 82%, #0c4a6e);
+  border: 1px solid color-mix(in srgb, #67c3f3 36%, var(--color-border));
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.canvas-size-callout-icon {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  color: #0284c7;
+}
 .properties-panel {
   display: flex;
   flex-direction: column;
@@ -1768,6 +2121,52 @@ const fontFamilies = [
 }
 .motion-preview-live-stagger-in {
   animation-name: motion-live-stagger-in;
+}
+
+.slide-settings-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: var(--space-4);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.slide-settings-tab {
+  min-height: 38px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+.slide-settings-tab-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.slide-settings-tab:hover {
+  color: var(--color-text);
+}
+.slide-settings-tab.active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+.slide-settings-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.slide-settings-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 @keyframes motion-sample-fade-up {

@@ -17,6 +17,7 @@ import ThemeManager from '@/components/editor/ThemeManager.vue'
 import ExportModal from '@/components/editor/ExportModal.vue'
 import AIProjectModal from '@/components/common/AIProjectModal.vue'
 import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
+import { getProjectCanvasSize } from '@/lib/canvas'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,6 +27,7 @@ const authStore = useAuthStore()
 
 const projectId = computed(() => route.params.id)
 const project = computed(() => projectStore.getProject(projectId.value))
+const canvasSize = computed(() => getProjectCanvasSize(project.value))
 const slides = computed(() => [...(project.value?.slides || [])].sort((a, b) => a.order - b.order))
 const imageInputRef = ref(null)
 const showAIProjectConfirm = ref(false)
@@ -205,8 +207,8 @@ function addImageToCurrentSlide(src, fileName = 'Image') {
     const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1)
     const width = Math.max(120, Math.round(image.width * ratio))
     const height = Math.max(80, Math.round(image.height * ratio))
-    const x = Math.max(24, Math.round((960 - width) / 2))
-    const y = Math.max(24, Math.round((540 - height) / 2))
+    const x = Math.max(24, Math.round((canvasSize.value.width - width) / 2))
+    const y = Math.max(24, Math.round((canvasSize.value.height - height) / 2))
 
     const created = projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
       x,

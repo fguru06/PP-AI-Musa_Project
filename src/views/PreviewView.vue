@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
+import { formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset } from '@/lib/canvas'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,11 +21,15 @@ const presentationSettings = computed(() => ({
   allowKeyboardNav: true,
   ...(project.value?.settings || {}),
 }))
+const canvasSize = computed(() => getProjectCanvasSize(project.value))
+const canvasPreset = computed(() => matchCanvasSizePreset(project.value))
+const canvasAspectLabel = computed(() => formatCanvasAspectRatio(canvasSize.value.width, canvasSize.value.height))
 
 const currentIndex = ref(0)
 const containerRef = ref(null)
 const scale = ref(1)
 const showUI = ref(true)
+const showGuideOverlay = ref(true)
 let uiTimer = null
 let autoAdvanceTimer = null
 
@@ -70,15 +75,37 @@ const deckProgress = computed(() => {
   if (!slides.value.length) return 0
   return ((currentIndex.value + 1) / slides.value.length) * 100
 })
+const previewGuide = computed(() => {
+  if (canvasPreset.value?.id === 'mobile') {
+    return {
+      tone: 'mobile',
+      label: 'Mobile safe area',
+      style: {
+        inset: '5% 8%',
+        borderRadius: '28px',
+      },
+    }
+  }
 
-const CANVAS_W = 960
-const CANVAS_H = 540
+  if (canvasPreset.value?.id === 'square') {
+    return {
+      tone: 'square',
+      label: 'Square composition guide',
+      style: {
+        inset: '8%',
+        borderRadius: '24px',
+      },
+    }
+  }
+
+  return null
+})
 
 function calcScale() {
   if (!containerRef.value) return
   const bw = containerRef.value.clientWidth
   const bh = containerRef.value.clientHeight
-  scale.value = Math.min(bw / CANVAS_W, bh / CANVAS_H, 1.5)
+  scale.value = Math.min(bw / canvasSize.value.width, bh / canvasSize.value.height, 1.5)
 }
 
 function goNext() {
@@ -199,6 +226,14 @@ watch(
   { deep: true }
 )
 
+watch(canvasSize, () => {
+  calcScale()
+}, { deep: true })
+
+watch(previewGuide, (guide) => {
+  showGuideOverlay.value = Boolean(guide)
+}, { immediate: true })
+
 // Element rendering helpers
 function slideBackground(slide) {
   if (!slide) return {}
@@ -314,8 +349,26 @@ function toggleHotspot(elId) {
         <div class="preview-stage" v-if="currentSlide" :key="currentSlide.id">
           <div
             class="slide-canvas"
-            :style="[slideBackground(currentSlide), { transform: `scale(${scale})`, transformOrigin: 'center center' }]"
+            :style="[
+              slideBackground(currentSlide),
+              {
+                width: `${canvasSize.width}px`,
+                height: `${canvasSize.height}px`,
+                transform: `scale(${scale})`,
+                transformOrigin: 'center center',
+              },
+            ]"
           >
+            <div
+              v-if="previewGuide && showGuideOverlay"
+              class="preview-guide"
+              :class="`preview-guide-${previewGuide.tone}`"
+              :style="previewGuide.style"
+              aria-hidden="true"
+            >
+              <span class="preview-guide-label">{{ previewGuide.label }} · {{ canvasAspectLabel }}</span>
+            </div>
+
             <!-- Elements -->
             <template v-for="(el, index) in currentSlideElements" :key="el.id">
               <div
@@ -496,7 +549,16 @@ function toggleHotspot(elId) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             {{ previewBackLabel }}
           </button>
-          <span class="preview-title">{{ project?.name }}</span>
+          <div class="preview-topbar-center">
+            <span class="preview-title">{{ project?.name }}</span>
+            <button v-if="previewGuide" class="guide-toggle-btn" @click="showGuideOverlay = !showGuideOverlay">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                <path d="M8 8h8v8H8z"></path>
+              </svg>
+              {{ showGuideOverlay ? 'Hide Guide' : 'Show Guide' }}
+            </button>
+          </div>
           <span class="slide-counter">{{ currentIndex + 1 }} / {{ slides.length }}</span>
         </div>
 
@@ -617,12 +679,38 @@ function toggleHotspot(elId) {
 }
 
 .slide-canvas {
-  width: 960px;
-  height: 540px;
   position: relative;
   overflow: hidden;
   border-radius: 18px;
   box-shadow: 0 30px 90px rgba(0,0,0,.5);
+}
+.preview-guide {
+  position: absolute;
+  border: 2px dashed rgba(255,255,255,.72);
+  pointer-events: none;
+  z-index: 4;
+}
+.preview-guide-mobile {
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+}
+.preview-guide-square {
+  background: linear-gradient(180deg, rgba(108,71,255,.08), rgba(108,71,255,.03));
+}
+.preview-guide-label {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(10, 16, 31, 0.78);
+  color: rgba(255,255,255,.88);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
 }
 
 .preview-element {
@@ -681,6 +769,11 @@ function toggleHotspot(elId) {
   padding: 0 24px;
   background: linear-gradient(to bottom, rgba(2,8,25,.78), rgba(2,8,25,.34), transparent);
 }
+.preview-topbar-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .ui-btn {
   display: flex;
   align-items: center;
@@ -696,6 +789,26 @@ function toggleHotspot(elId) {
   transition: background .2s, transform .2s;
 }
 .ui-btn:hover { background: rgba(255,255,255,.18); transform: translateY(-1px); }
+.guide-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.82);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .2s, transform .2s, color .2s;
+}
+.guide-toggle-btn:hover {
+  background: rgba(255,255,255,.16);
+  color: #fff;
+  transform: translateY(-1px);
+}
 .preview-title {
   font-size: 14px;
   font-weight: 700;

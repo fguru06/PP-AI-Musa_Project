@@ -5,6 +5,7 @@ import Modal from '@/components/common/Modal.vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
+import { getProjectCanvasSize } from '@/lib/canvas'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
@@ -43,9 +44,14 @@ function sanitizeExportName(name, fallback = 'presentation') {
 }
 
 function buildRuntimeCSS(theme, settings) {
+  const canvasSize = getProjectCanvasSize(settings)
   return `
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
+:root {
+  --lf-slide-width: ${canvasSize.width}px;
+  --lf-slide-height: ${canvasSize.height}px;
+}
 body {
   min-height: 100vh;
   font-family: ${theme?.fontFamily || 'Inter, sans-serif'};
@@ -119,8 +125,8 @@ body {
 }
 .presentation {
   position: relative;
-  width: 960px;
-  height: 540px;
+  width: var(--lf-slide-width);
+  height: var(--lf-slide-height);
   border-radius: 18px;
   overflow: hidden;
   box-shadow: 0 30px 90px rgba(0,0,0,.5);
@@ -571,7 +577,11 @@ function buildRuntimeJS() {
   function resizeStage() {
     var stage = document.getElementById('presentation');
     if (!stage) return;
-    var scale = Math.min(window.innerWidth / 960, window.innerHeight / 540, 1.5);
+    var slideWidth = Math.max(320, Number(settings.slideWidth || 960));
+    var slideHeight = Math.max(320, Number(settings.slideHeight || 540));
+    var availableWidth = Math.max(240, window.innerWidth - 72);
+    var availableHeight = Math.max(240, window.innerHeight - 72);
+    var scale = Math.min(availableWidth / slideWidth, availableHeight / slideHeight, 1.5);
     stage.style.transform = 'scale(' + scale + ')';
   }
 

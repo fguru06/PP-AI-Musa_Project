@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { v4 as uuid } from 'uuid'
 import { useAuthStore } from './authStore'
+import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, normalizeCanvasSettings } from '@/lib/canvas'
 
 let firestoreServicesPromise = null
 
@@ -101,6 +102,10 @@ function makeBlankSlide(order = 0) {
 
 function makeNewProject(name = 'Untitled Project') {
   const slide = makeBlankSlide(0)
+  const defaultCanvas = normalizeCanvasSettings({
+    slideWidth: DEFAULT_CANVAS_WIDTH,
+    slideHeight: DEFAULT_CANVAS_HEIGHT,
+  })
   return {
     id: uuid(),
     name,
@@ -114,8 +119,8 @@ function makeNewProject(name = 'Untitled Project') {
     authorName: '',
     tags: [],
     settings: {
-      slideWidth: 960,
-      slideHeight: 540,
+      slideWidth: defaultCanvas.slideWidth,
+      slideHeight: defaultCanvas.slideHeight,
       autoPlay: false,
       loop: false,
       showProgress: true,
@@ -336,6 +341,7 @@ function clearLocal(userId = null) {
 }
 
 function normalizeProject(project) {
+  const normalizedCanvas = normalizeCanvasSettings(project.settings || {})
   return {
     ...project,
     description: project.description || '',
@@ -357,14 +363,14 @@ function normalizeProject(project) {
     authorName: project.authorName || '',
     tags: Array.isArray(project.tags) ? project.tags : [],
     settings: {
-      slideWidth: 960,
-      slideHeight: 540,
       autoPlay: false,
       loop: false,
       showProgress: true,
       showNavControls: true,
       allowKeyboardNav: true,
       ...(project.settings || {}),
+      slideWidth: normalizedCanvas.slideWidth,
+      slideHeight: normalizedCanvas.slideHeight,
       motionPresets: normalizeMotionPresets(project.settings?.motionPresets),
     },
   }
@@ -588,7 +594,14 @@ export const useProjectStore = defineStore('projects', () => {
   function updateProject(id, patch) {
     const idx = projects.value.findIndex(p => p.id === id)
     if (idx !== -1) {
-      projects.value[idx] = { ...projects.value[idx], ...patch, updatedAt: Date.now() }
+      const nextPatch = { ...patch }
+      if (patch?.settings) {
+        nextPatch.settings = {
+          ...patch.settings,
+          ...normalizeCanvasSettings(patch.settings),
+        }
+      }
+      projects.value[idx] = { ...projects.value[idx], ...nextPatch, updatedAt: Date.now() }
       persistProject(projects.value[idx])
     }
   }

@@ -2,6 +2,7 @@
 import { computed, ref, provide, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
+import { formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset } from '@/lib/canvas'
 import ElementWrapper from './ElementWrapper.vue'
 import TextElement from './elements/TextElement.vue'
 import ImageElement from './elements/ImageElement.vue'
@@ -18,15 +19,17 @@ const projectStore = useProjectStore()
 const canvasContainerRef = ref(null)
 const canvasRef = ref(null)
 const scale = ref(1)
+const interactionScale = computed(() => scale.value * editorStore.zoomLevel)
 
 // Provide scale to child elements
-provide('canvasScale', scale)
-
-// Canvas size: 960×540 (16:9)
-const CANVAS_W = 960
-const CANVAS_H = 540
+provide('canvasScale', interactionScale)
 
 const project = computed(() => projectStore.getProject(editorStore.projectId))
+const canvasSize = computed(() => getProjectCanvasSize(project.value))
+const canvasPreset = computed(() => matchCanvasSizePreset(project.value))
+const canvasWidth = computed(() => canvasSize.value.width)
+const canvasHeight = computed(() => canvasSize.value.height)
+const canvasAspectLabel = computed(() => formatCanvasAspectRatio(canvasWidth.value, canvasHeight.value))
 const slide = computed(() => project.value?.slides?.find(s => s.id === editorStore.currentSlideId))
 const slides = computed(() => [...(project.value?.slides || [])].sort((a, b) => a.order - b.order))
 const currentSlideIndex = computed(() => slides.value.findIndex(s => s.id === editorStore.currentSlideId))
@@ -127,15 +130,15 @@ const slideBackground = computed(() => {
 })
 
 // Zoom-based scale
-const canvasTransform = computed(() => `scale(${editorStore.zoomLevel})`)
+const canvasTransform = computed(() => `scale(${interactionScale.value})`)
 
 // Fit to container
 function recalcScale() {
   if (!canvasContainerRef.value) return
   const { clientWidth, clientHeight } = canvasContainerRef.value
-  const scaleX = (clientWidth - 80) / CANVAS_W
-  const scaleY = (clientHeight - 80) / CANVAS_H
-  scale.value = Math.min(scaleX, scaleY)
+  const scaleX = (clientWidth - 80) / canvasWidth.value
+  const scaleY = (clientHeight - 80) / canvasHeight.value
+  scale.value = Math.min(scaleX, scaleY, 1)
 }
 
 // Resize observer
@@ -152,12 +155,92 @@ watch(groupMotionPresets, () => {
   syncCanvasPresetSelection()
 }, { deep: true, immediate: true })
 
+watch(canvasSize, () => {
+  recalcScale()
+}, { deep: true })
+
 // Hovered and drag states
 const isDragging = ref(false)
 const selectionStart = ref({ x: 0, y: 0 })
 const selectionCurrent = ref({ x: 0, y: 0 })
 const isSelecting = ref(false)
 const isImageDragOver = ref(false)
+const canvasGuide = computed(() => {
+  if (canvasPreset.value?.id === 'mobile') {
+    return {
+      tone: 'mobile',
+      label: 'Mobile safe area',
+      style: {
+        inset: '5% 8%',
+        borderRadius: '28px',
+      },
+    }
+  }
+
+  if (canvasPreset.value?.id === 'square') {
+    return {
+      tone: 'square',
+      label: 'Square composition guide',
+      style: {
+        inset: '8%',
+        borderRadius: '24px',
+      },
+    }
+  }
+
+  return null
+})
+const canvasGuideRect = computed(() => {
+  if (!canvasGuide.value) return null
+
+  if (canvasGuide.value.tone === 'mobile') {
+    const x = canvasWidth.value * 0.08
+    const y = canvasHeight.value * 0.05
+    return {
+      x,
+      y,
+      width: canvasWidth.value - (x * 2),
+      height: canvasHeight.value - (y * 2),
+    }
+  }
+
+  const inset = canvasWidth.value * 0.08
+  const insetY = canvasHeight.value * 0.08
+  return {
+    x: inset,
+    y: insetY,
+    width: canvasWidth.value - (inset * 2),
+    height: canvasHeight.value - (insetY * 2),
+  }
+})
+const unsafeElementIds = computed(() => {
+  if (!canvasGuideRect.value) return []
+  const safe = canvasGuideRect.value
+  return sortedElements.value
+    .filter((element) => element.visible !== false)
+    .filter((element) => {
+      const left = Number(element.x || 0)
+      const top = Number(element.y || 0)
+      const right = left + Number(element.width || 0)
+      const bottom = top + Number(element.height || 0)
+
+      return left < safe.x || top < safe.y || right > safe.x + safe.width || bottom > safe.y + safe.height
+    })
+    .map((element) => element.id)
+})
+const unsafeSelectedCount = computed(() =>
+  editorStore.selectedElementIds.filter((id) => unsafeElementIds.value.includes(id)).length
+)
+const unsafeElementCount = computed(() => unsafeElementIds.value.length)
+const canvasGuideWarning = computed(() => {
+  if (!canvasGuide.value || !unsafeElementCount.value) return null
+
+  if (unsafeSelectedCount.value) {
+    return `${unsafeSelectedCount.value} selected ${unsafeSelectedCount.value === 1 ? 'element is' : 'elements are'} outside the ${canvasGuide.value.label.toLowerCase()}.`
+  }
+
+  return `${unsafeElementCount.value} ${unsafeElementCount.value === 1 ? 'element is' : 'elements are'} outside the ${canvasGuide.value.label.toLowerCase()}.`
+})
 
 const selectionBox = computed(() => {
   if (!isSelecting.value) return null
@@ -192,15 +275,15 @@ function addDroppedImage(file, clientX, clientY) {
     const image = new Image()
     image.onload = () => {
       const rect = canvasRef.value.getBoundingClientRect()
-      const dropX = (clientX - rect.left) / editorStore.zoomLevel
-      const dropY = (clientY - rect.top) / editorStore.zoomLevel
+      const dropX = (clientX - rect.left) / interactionScale.value
+      const dropY = (clientY - rect.top) / interactionScale.value
       const maxWidth = 420
       const maxHeight = 280
       const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1)
       const width = Math.max(120, Math.round(image.width * ratio))
       const height = Math.max(80, Math.round(image.height * ratio))
-      const x = Math.max(0, Math.min(CANVAS_W - width, Math.round(dropX - width / 2)))
-      const y = Math.max(0, Math.min(CANVAS_H - height, Math.round(dropY - height / 2)))
+      const x = Math.max(0, Math.min(canvasWidth.value - width, Math.round(dropX - width / 2)))
+      const y = Math.max(0, Math.min(canvasHeight.value - height, Math.round(dropY - height / 2)))
 
       const created = projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
         x,
@@ -254,8 +337,8 @@ function onCanvasMouseDown(e) {
   e.stopPropagation()
 
   const rect = canvasRef.value.getBoundingClientRect()
-  const startX = (e.clientX - rect.left) / editorStore.zoomLevel
-  const startY = (e.clientY - rect.top) / editorStore.zoomLevel
+  const startX = (e.clientX - rect.left) / interactionScale.value
+  const startY = (e.clientY - rect.top) / interactionScale.value
 
   if (tool === 'select') {
     // Start marquee selection
@@ -265,8 +348,8 @@ function onCanvasMouseDown(e) {
 
     const onMouseMove = (moveEvt) => {
       selectionCurrent.value = {
-        x: (moveEvt.clientX - rect.left) / editorStore.zoomLevel,
-        y: (moveEvt.clientY - rect.top) / editorStore.zoomLevel
+        x: (moveEvt.clientX - rect.left) / interactionScale.value,
+        y: (moveEvt.clientY - rect.top) / interactionScale.value
       }
     }
 
@@ -436,6 +519,9 @@ function goNextSlide() {
       <!-- Zoom wrapper -->
       <div
         class="canvas-zoom-wrapper"
+        :class="[
+          canvasGuide && `canvas-zoom-wrapper-${canvasGuide.tone}`,
+        ]"
         :style="{
           transform: canvasTransform,
           transformOrigin: 'center center',
@@ -447,8 +533,8 @@ function goNextSlide() {
           ref="canvasRef"
           class="slide-canvas"
           :style="{
-            width: CANVAS_W + 'px',
-            height: CANVAS_H + 'px',
+            width: canvasWidth + 'px',
+            height: canvasHeight + 'px',
             ...slideBackground,
             ...gridStyle,
           }"
@@ -459,12 +545,18 @@ function goNextSlide() {
           @drop="onCanvasDropFile"
           @contextmenu.prevent
         >
+          <div v-if="canvasGuide" class="canvas-device-frame" aria-hidden="true"></div>
           <div v-if="editorStore.multiSelection && groupMotionPresets.length" class="selection-preset-chip" @mousedown.stop>
             <span class="selection-preset-label">Sequence</span>
             <select v-model="canvasGroupPresetId" class="selection-preset-select">
               <option v-for="preset in groupMotionPresets" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
             </select>
             <button type="button" class="selection-preset-apply" @click.stop="applyCanvasGroupPreset">Apply</button>
+          </div>
+
+          <div v-if="canvasGuideWarning" class="canvas-guide-warning" @mousedown.stop>
+            <span class="canvas-guide-warning-dot"></span>
+            <span>{{ canvasGuideWarning }}</span>
           </div>
 
           <!-- Elements -->
@@ -480,6 +572,19 @@ function goNextSlide() {
               :style="el.type === 'divider' ? getDividerStyle(el) : {}"
             />
           </ElementWrapper>
+
+          <div
+            v-if="canvasGuide"
+            class="canvas-guide"
+            :class="[
+              `canvas-guide-${canvasGuide.tone}`,
+              unsafeElementCount && 'canvas-guide-warning-state',
+            ]"
+            :style="canvasGuide.style"
+            aria-hidden="true"
+          >
+            <span class="canvas-guide-label">{{ canvasGuide.label }} · {{ canvasAspectLabel }}</span>
+          </div>
 
           <!-- Drop hint when tool is active -->
           <div
@@ -507,7 +612,7 @@ function goNextSlide() {
         <button class="bar-btn icon" @click="goPrevSlide" :disabled="currentSlideIndex <= 0">◀</button>
         <span class="slide-index">{{ currentSlideIndex + 1 }} / {{ slides.length }}</span>
         <button class="bar-btn icon" @click="goNextSlide" :disabled="currentSlideIndex >= slides.length - 1">▶</button>
-        <span>{{ CANVAS_W }} × {{ CANVAS_H }}px</span>
+        <span>{{ canvasWidth }} × {{ canvasHeight }}px</span>
         <span>·</span>
         <span>{{ slide.elements?.length || 0 }} elements</span>
         <span>·</span>
@@ -550,8 +655,34 @@ function goNextSlide() {
   font-size: var(--text-sm);
 }
 .canvas-zoom-wrapper {
+  position: relative;
   will-change: transform;
   cursor: default;
+}
+.canvas-zoom-wrapper-mobile,
+.canvas-zoom-wrapper-square {
+  filter: drop-shadow(0 24px 38px rgba(15, 23, 42, 0.24));
+}
+.canvas-device-frame {
+  position: absolute;
+  inset: -18px;
+  border-radius: 30px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,.12));
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12), inset 0 0 0 1px rgba(255,255,255,.28);
+  pointer-events: none;
+}
+.canvas-zoom-wrapper-mobile .canvas-device-frame::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24%;
+  max-width: 110px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.3);
 }
 .slide-canvas {
   position: relative;
@@ -559,6 +690,66 @@ function goNextSlide() {
   border-radius: 2px;
   overflow: hidden;
   cursor: default;
+}
+.canvas-guide {
+  position: absolute;
+  border: 2px dashed rgba(255,255,255,.72);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1);
+  pointer-events: none;
+  z-index: 8;
+}
+.canvas-guide-warning-state {
+  border-color: rgba(248, 113, 113, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(127, 29, 29, 0.18), 0 0 0 1px rgba(248, 113, 113, 0.22);
+}
+.canvas-guide-mobile {
+  background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+}
+.canvas-guide-square {
+  background: linear-gradient(180deg, rgba(108,71,255,.08), rgba(108,71,255,.03));
+}
+.canvas-guide-label {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(10, 16, 31, 0.78);
+  color: rgba(255,255,255,.88);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.canvas-guide-warning {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 24;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  max-width: min(320px, calc(100% - 28px));
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(127, 29, 29, 0.88);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  color: #fff1f2;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  box-shadow: 0 14px 28px rgba(127, 29, 29, 0.2);
+}
+.canvas-guide-warning-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #fca5a5;
+  flex: 0 0 auto;
 }
 .selection-preset-chip {
   position: absolute;
