@@ -2,8 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { v4 as uuid } from 'uuid'
 import { useAuthStore } from './authStore'
+import { db } from '@/firebase'
+import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc, writeBatch } from 'firebase/firestore'
 
 const STORAGE_KEY = 'elearn_projects'
+const LOCAL_ANON_KEY = `${STORAGE_KEY}_anonymous`
 
 function makeDefaultTheme() {
   return {
@@ -245,59 +248,174 @@ function getTemplateBlueprint(templateId, name) {
   }
 }
 
-function load(userId) {
-  const key = userId ? `${STORAGE_KEY}_${userId}` : `${STORAGE_KEY}_anonymous`
+function loadLocal(userId = null) {
+  const key = userId ? `${STORAGE_KEY}_${userId}` : LOCAL_ANON_KEY
   try {
     const raw = localStorage.getItem(key)
     return raw ? JSON.parse(raw) : []
   } catch { return [] }
 }
 
-function save(projects, userId) {
-  const key = userId ? `${STORAGE_KEY}_${userId}` : `${STORAGE_KEY}_anonymous`
+function saveLocal(projects, userId = null) {
+  const key = userId ? `${STORAGE_KEY}_${userId}` : LOCAL_ANON_KEY
   try {
     localStorage.setItem(key, JSON.stringify(projects))
   } catch {}
 }
 
+function clearLocal(userId = null) {
+  const key = userId ? `${STORAGE_KEY}_${userId}` : LOCAL_ANON_KEY
+  try {
+    localStorage.removeItem(key)
+  } catch {}
+}
+
+function projectsCollection(userId) {
+  return collection(db, 'users', userId, 'projects')
+}
+
+function normalizeProject(project) {
+  return {
+    ...project,
+    description: project.description || '',
+    thumbnail: project.thumbnail || '',
+    slides: Array.isArray(project.slides) ? project.slides : [makeBlankSlide(0)],
+    theme: { ...makeDefaultTheme(), ...(project.theme || {}) },
+    createdAt: Number(project.createdAt) || Date.now(),
+    updatedAt: Number(project.updatedAt) || Date.now(),
+    version: project.version || '1.0',
+    authorName: project.authorName || '',
+    tags: Array.isArray(project.tags) ? project.tags : [],
+    settings: {
+      slideWidth: 960,
+      slideHeight: 540,
+      autoPlay: false,
+      loop: false,
+      showProgress: true,
+      showNavControls: true,
+      allowKeyboardNav: true,
+      ...(project.settings || {}),
+    },
+  }
+}
+
+async function upsertRemoteProject(userId, project) {
+  if (!userId || !project?.id) return
+  await setDoc(doc(projectsCollection(userId), project.id), normalizeProject(project))
+}
+
+async function deleteRemoteProject(userId, projectId) {
+  if (!userId || !projectId) return
+  await deleteDoc(doc(projectsCollection(userId), projectId))
+}
+
+async function migrateBrowserProjects(userId) {
+  if (!userId) return
+
+  const cachedProjects = [...loadLocal(), ...loadLocal(userId)]
+  if (!cachedProjects.length) return
+
+  const collectionRef = projectsCollection(userId)
+  const existingSnapshot = await getDocs(collectionRef)
+  const existingIds = new Set(existingSnapshot.docs.map(projectDoc => projectDoc.id))
+  const batch = writeBatch(db)
+  let hasWrites = false
+
+  cachedProjects.forEach(project => {
+    if (existingIds.has(project.id)) return
+    batch.set(doc(collectionRef, project.id), normalizeProject(project))
+    existingIds.add(project.id)
+    hasWrites = true
+  })
+
+  if (hasWrites) {
+    await batch.commit()
+  }
+
+  clearLocal()
+  clearLocal(userId)
+}
+
 export const useProjectStore = defineStore('projects', () => {
   const authStore = useAuthStore()
   const projects = ref([])
+  const syncError = ref('')
+  let stopProjectsSync = null
 
-  watch(() => authStore.user, (user) => {
-    const loadedProjects = load(user?.uid)
-    
-    if (user?.uid) {
-      const anonProjects = load(null)
-      if (anonProjects.length > 0) {
-        // Find distinct projects (basic merge by ID to avoid duplicates if any)
-        anonProjects.forEach(ap => {
-          if (!loadedProjects.find(p => p.id === ap.id)) {
-            loadedProjects.push(ap)
-          }
-        })
-        localStorage.removeItem(`${STORAGE_KEY}_anonymous`)
+  watch(() => authStore.user?.uid, async (userId) => {
+    syncError.value = ''
+
+    if (stopProjectsSync) {
+      stopProjectsSync()
+      stopProjectsSync = null
+    }
+
+    if (!userId) {
+      projects.value = loadLocal()
+      return
+    }
+
+    projects.value = []
+
+    try {
+      await migrateBrowserProjects(userId)
+    } catch (error) {
+      console.error('Failed to migrate browser projects', error)
+      syncError.value = 'Some browser-saved projects could not be migrated to your account.'
+    }
+
+    stopProjectsSync = onSnapshot(
+      projectsCollection(userId),
+      (snapshot) => {
+        projects.value = snapshot.docs.map(projectDoc => normalizeProject({ id: projectDoc.id, ...projectDoc.data() }))
+        saveLocal(projects.value, userId)
+      },
+      (error) => {
+        console.error('Failed to sync account projects', error)
+        syncError.value = 'Unable to sync your projects right now.'
+        projects.value = loadLocal(userId)
       }
-    }
-    
-    projects.value = loadedProjects
-    if (user?.uid) {
-      persist()
-    }
+    )
   }, { immediate: true, flush: 'sync' })
 
   const sortedProjects = computed(() =>
     [...projects.value].sort((a, b) => b.updatedAt - a.updatedAt)
   )
 
-  function persist() {
-    save(projects.value, authStore.user?.uid)
+  function cacheLocalProjects() {
+    saveLocal(projects.value, authStore.user?.uid || null)
+  }
+
+  function persistProject(project) {
+    cacheLocalProjects()
+
+    if (!authStore.user?.uid) {
+      return Promise.resolve()
+    }
+
+    return upsertRemoteProject(authStore.user.uid, project).catch((error) => {
+      console.error('Failed to persist project', error)
+      syncError.value = 'Unable to save your latest project changes.'
+    })
+  }
+
+  function removePersistedProject(projectId) {
+    cacheLocalProjects()
+
+    if (!authStore.user?.uid) {
+      return Promise.resolve()
+    }
+
+    return deleteRemoteProject(authStore.user.uid, projectId).catch((error) => {
+      console.error('Failed to delete project', error)
+      syncError.value = 'Unable to delete this project from your account.'
+    })
   }
 
   function createProject(name) {
     const p = makeNewProject(name)
     projects.value.push(p)
-    persist()
+    persistProject(p)
     return p
   }
 
@@ -310,7 +428,7 @@ export const useProjectStore = defineStore('projects', () => {
     p.createdAt = Date.now()
     p.updatedAt = Date.now()
     projects.value.push(p)
-    persist()
+    persistProject(p)
     return p
   }
 
@@ -329,7 +447,7 @@ export const useProjectStore = defineStore('projects', () => {
       return s
     })
     projects.value.push(copy)
-    persist()
+    persistProject(copy)
     return copy
   }
 
@@ -337,7 +455,7 @@ export const useProjectStore = defineStore('projects', () => {
     const idx = projects.value.findIndex(p => p.id === id)
     if (idx !== -1) {
       projects.value.splice(idx, 1)
-      persist()
+      removePersistedProject(id)
     }
   }
 
@@ -349,7 +467,7 @@ export const useProjectStore = defineStore('projects', () => {
     const idx = projects.value.findIndex(p => p.id === id)
     if (idx !== -1) {
       projects.value[idx] = { ...projects.value[idx], ...patch, updatedAt: Date.now() }
-      persist()
+      persistProject(projects.value[idx])
     }
   }
 
@@ -366,7 +484,7 @@ export const useProjectStore = defineStore('projects', () => {
     }
     p.slides.forEach((s, i) => { s.order = i })
     p.updatedAt = Date.now()
-    persist()
+    persistProject(p)
     return slide
   }
 
@@ -378,7 +496,7 @@ export const useProjectStore = defineStore('projects', () => {
       p.slides.splice(idx, 1)
       p.slides.forEach((s, i) => { s.order = i })
       p.updatedAt = Date.now()
-      persist()
+      persistProject(p)
     }
   }
 
@@ -394,7 +512,7 @@ export const useProjectStore = defineStore('projects', () => {
     p.slides.splice(idx + 1, 0, copy)
     p.slides.forEach((s, i) => { s.order = i })
     p.updatedAt = Date.now()
-    persist()
+    persistProject(p)
     return copy
   }
 
@@ -405,7 +523,7 @@ export const useProjectStore = defineStore('projects', () => {
     p.slides.splice(to, 0, moved)
     p.slides.forEach((s, i) => { s.order = i })
     p.updatedAt = Date.now()
-    persist()
+    persistProject(p)
   }
 
   function updateSlide(projectId, slideId, patch) {
@@ -415,7 +533,7 @@ export const useProjectStore = defineStore('projects', () => {
     if (s) {
       Object.assign(s, patch)
       p.updatedAt = Date.now()
-      persist()
+      persistProject(p)
     }
   }
 
@@ -444,7 +562,7 @@ export const useProjectStore = defineStore('projects', () => {
     }
     slide.elements.push(el)
     p.updatedAt = Date.now()
-    persist()
+    persistProject(p)
     return el
   }
 
@@ -457,7 +575,7 @@ export const useProjectStore = defineStore('projects', () => {
     if (el) {
       Object.assign(el, patch)
       p.updatedAt = Date.now()
-      persist()
+      persistProject(p)
     }
   }
 
@@ -470,7 +588,7 @@ export const useProjectStore = defineStore('projects', () => {
     if (idx !== -1) {
       slide.elements.splice(idx, 1)
       p.updatedAt = Date.now()
-      persist()
+      persistProject(p)
     }
   }
 
@@ -488,7 +606,7 @@ export const useProjectStore = defineStore('projects', () => {
     copy.zIndex = src.zIndex + 1
     slide.elements.push(copy)
     p.updatedAt = Date.now()
-    persist()
+    persistProject(p)
     return copy
   }
 
@@ -515,7 +633,7 @@ export const useProjectStore = defineStore('projects', () => {
       }
     }
     p.updatedAt = Date.now()
-    persist()
+    persistProject(p)
   }
 
   function exportProject(projectId) {
@@ -532,7 +650,7 @@ export const useProjectStore = defineStore('projects', () => {
       p.createdAt = Date.now()
       p.updatedAt = Date.now()
       projects.value.push(p)
-      persist()
+      persistProject(p)
       return p
     } catch { return null }
   }
@@ -540,6 +658,7 @@ export const useProjectStore = defineStore('projects', () => {
   return {
     projects,
     sortedProjects,
+    syncError,
     createProject,
     createProjectFromTemplate,
     duplicateProject,
