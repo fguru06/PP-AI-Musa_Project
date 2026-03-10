@@ -20,6 +20,8 @@ const showUI = ref(true)
 let uiTimer = null
 
 const currentSlide = computed(() => slides.value[currentIndex.value] || null)
+const previewSource = computed(() => typeof route.query.from === 'string' ? route.query.from : 'dashboard')
+const previewBackLabel = computed(() => previewSource.value === 'editor' ? 'Back to Editor' : 'Back to Dashboard')
 
 const CANVAS_W = 960
 const CANVAS_H = 540
@@ -47,8 +49,20 @@ function handleKey(e) {
   if (e.key === 'Escape') exitPreview()
 }
 
-function exitPreview() {
+function goToEditor() {
   router.push({ name: 'editor', params: { id: projectId.value } })
+}
+
+function goToDashboard() {
+  router.push({ name: 'dashboard' })
+}
+
+function exitPreview() {
+  if (previewSource.value === 'editor') {
+    goToEditor()
+    return
+  }
+  goToDashboard()
 }
 
 function revealUI() {
@@ -309,7 +323,7 @@ function toggleHotspot(elId) {
         <div class="preview-topbar">
           <button class="ui-btn" @click="exitPreview">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Back to Editor
+            {{ previewBackLabel }}
           </button>
           <span class="preview-title">{{ project?.name }}</span>
           <span class="slide-counter">{{ currentIndex + 1 }} / {{ slides.length }}</span>
@@ -427,6 +441,9 @@ function toggleHotspot(elId) {
 /* Preview UI */
 .preview-ui {
   pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
 }
 .preview-ui > * { pointer-events: auto; }
 

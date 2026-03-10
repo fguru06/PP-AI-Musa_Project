@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 
+const emit = defineEmits(['open-ai-project'])
+
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
 
@@ -118,6 +120,17 @@ function setTool(id) {
       </button>
     </div>
 
+    <div class="toolbar-divider" />
+
+    <div class="toolbar-group">
+      <button class="tool-btn tool-btn-ai-project" @click="emit('open-ai-project')" data-tooltip="Create a new AI project">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/>
+        </svg>
+        <span class="tool-label">AI Project</span>
+      </button>
+    </div>
+
     <div class="toolbar-spacer" />
 
     <!-- Right: zoom + view options -->
@@ -219,6 +232,16 @@ function setTool(id) {
   background: linear-gradient(135deg, #6c47ff, #4f46e5);
   color: #fff;
   box-shadow: 0 10px 24px rgba(108, 71, 255, 0.24);
+}
+.tool-btn-ai-project {
+  background: linear-gradient(135deg, rgba(245, 243, 255, 0.96), rgba(238, 242, 255, 0.96));
+  border-color: rgba(124, 58, 237, 0.18);
+  color: #5b21b6;
+}
+.tool-btn-ai-project:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(245, 243, 255, 0.98));
+  border-color: rgba(124, 58, 237, 0.26);
+  color: #4c1d95;
 }
 .tool-label {
   font-size: 13px;

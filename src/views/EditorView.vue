@@ -5,6 +5,7 @@ import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useKeyboardShortcuts } from '@/composables/useDrag'
+import { useDashboardAICreation } from '@/composables/useDashboardAICreation'
 
 import SlidePanel from '@/components/editor/SlidePanel.vue'
 import LayerPanel from '@/components/editor/LayerPanel.vue'
@@ -14,6 +15,8 @@ import EditorCanvas from '@/components/editor/EditorCanvas.vue'
 import AIAssistant from '@/components/editor/AIAssistant.vue'
 import ThemeManager from '@/components/editor/ThemeManager.vue'
 import ExportModal from '@/components/editor/ExportModal.vue'
+import AIProjectModal from '@/components/common/AIProjectModal.vue'
+import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +28,28 @@ const projectId = computed(() => route.params.id)
 const project = computed(() => projectStore.getProject(projectId.value))
 const slides = computed(() => [...(project.value?.slides || [])].sort((a, b) => a.order - b.order))
 const imageInputRef = ref(null)
+const showAIProjectConfirm = ref(false)
+const pendingAIMode = ref('deck')
+const {
+  aiStore,
+  showAIModal,
+  aiMode,
+  aiTopic,
+  aiContext,
+  aiProjectName,
+  aiSlideCount,
+  aiQuestionCount,
+  aiDifficulty,
+  aiQuestionType,
+  aiCreationError,
+  aiSubmitting,
+  aiProjectNamePlaceholder,
+  aiPrimaryActionLabel,
+  openAICreationModal,
+  createAIProject,
+} = useDashboardAICreation({
+  onRequireAuth: () => router.push({ name: 'dashboard' }),
+})
 
 let isUndoing = false
 let historyTimeout = null
@@ -154,7 +179,17 @@ function goBack() {
 }
 
 function preview() {
-  router.push({ name: 'preview', params: { id: projectId.value } })
+  router.push({ name: 'preview', params: { id: projectId.value }, query: { from: 'editor' } })
+}
+
+function openEditorAIProjectModal(mode = 'deck') {
+  pendingAIMode.value = mode
+  showAIProjectConfirm.value = true
+}
+
+function confirmOpenEditorAIProject() {
+  showAIProjectConfirm.value = false
+  openAICreationModal(pendingAIMode.value)
 }
 
 function addImageToCurrentSlide(src, fileName = 'Image') {
@@ -326,7 +361,7 @@ function isAuthoringOptionActive(id) {
     </header>
 
     <!-- Toolbar -->
-    <EditorToolbar />
+    <EditorToolbar @open-ai-project="openEditorAIProjectModal" />
 
     <!-- Main layout -->
     <div class="editor-body">
@@ -414,6 +449,43 @@ function isAuthoringOptionActive(id) {
 
     <!-- Export Modal -->
     <ExportModal v-if="editorStore.showExportModal" />
+
+    <ConfirmActionModal
+      v-if="showAIProjectConfirm"
+      title="Create a New AI Project"
+      message="Your current project stays saved. When the AI finishes, the editor will switch to the new generated project."
+      confirm-label="Continue"
+      @close="showAIProjectConfirm = false"
+      @confirm="confirmOpenEditorAIProject"
+    />
+
+    <AIProjectModal
+      v-if="showAIModal"
+      :mode="aiMode"
+      :topic="aiTopic"
+      :context="aiContext"
+      :project-name="aiProjectName"
+      :slide-count="aiSlideCount"
+      :question-count="aiQuestionCount"
+      :difficulty="aiDifficulty"
+      :question-type="aiQuestionType"
+      :project-name-placeholder="aiProjectNamePlaceholder"
+      :primary-action-label="aiPrimaryActionLabel"
+      :creation-error="aiCreationError"
+      :is-submitting="aiSubmitting"
+      :is-generating="aiStore.isGenerating"
+      :has-api-key="!!aiStore.apiKey"
+      @close="showAIModal = false"
+      @create="createAIProject"
+      @update:mode="aiMode = $event"
+      @update:topic="aiTopic = $event"
+      @update:context="aiContext = $event"
+      @update:project-name="aiProjectName = $event"
+      @update:slide-count="aiSlideCount = $event"
+      @update:question-count="aiQuestionCount = $event"
+      @update:difficulty="aiDifficulty = $event"
+      @update:question-type="aiQuestionType = $event"
+    />
   </div>
 
   <!-- Not found -->
