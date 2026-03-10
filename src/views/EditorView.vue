@@ -70,8 +70,11 @@ watch(() => project.value, (newVal) => {
 // Wait for auth to be ready before evaluating if project exists
 watch(
   () => authStore.isAuthReady,
-  (isReady) => {
+  async (isReady) => {
     if (isReady) {
+      if (authStore.user?.uid) {
+        await projectStore.ensureRemoteProjectsLoaded()
+      }
       if (!project.value) {
         router.push({ name: 'dashboard' })
         return

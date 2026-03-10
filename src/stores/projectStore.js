@@ -7,13 +7,7 @@ let firestoreServicesPromise = null
 
 async function getFirestoreServices() {
   if (!firestoreServicesPromise) {
-    firestoreServicesPromise = Promise.all([
-      import('@/firebase'),
-      import('firebase/firestore'),
-    ]).then(([firebaseModule, firestoreModule]) => ({
-      ...firebaseModule,
-      ...firestoreModule,
-    }))
+    firestoreServicesPromise = import('@/lib/firebase/firestore').then((module) => module.getFirebaseFirestoreServices())
   }
 
   return firestoreServicesPromise
@@ -422,9 +416,38 @@ export const useProjectStore = defineStore('projects', () => {
   const authStore = useAuthStore()
   const projects = ref([])
   const syncError = ref('')
+  const remoteSyncRequested = ref(false)
+  const remoteSyncState = ref('idle')
   let stopProjectsSync = null
+  let remoteSyncPromise = Promise.resolve()
+  let resolveRemoteSyncPromise = null
 
-  watch(() => authStore.user?.uid, async (userId) => {
+  function resetRemoteSyncPromise() {
+    remoteSyncPromise = new Promise((resolve) => {
+      resolveRemoteSyncPromise = resolve
+    })
+  }
+
+  function resolveRemoteSync() {
+    if (resolveRemoteSyncPromise) {
+      resolveRemoteSyncPromise()
+      resolveRemoteSyncPromise = null
+    }
+  }
+
+  async function ensureRemoteProjectsLoaded() {
+    if (!authStore.user?.uid) return
+    if (remoteSyncRequested.value && remoteSyncState.value === 'ready') return
+
+    if (!remoteSyncRequested.value) {
+      resetRemoteSyncPromise()
+      remoteSyncRequested.value = true
+    }
+
+    return remoteSyncPromise
+  }
+
+  watch([() => authStore.user?.uid, remoteSyncRequested], async ([userId, shouldSync]) => {
     syncError.value = ''
 
     if (stopProjectsSync) {
@@ -434,10 +457,20 @@ export const useProjectStore = defineStore('projects', () => {
 
     if (!userId) {
       projects.value = loadLocal()
+      remoteSyncState.value = 'idle'
+      resolveRemoteSync()
+      return
+    }
+
+    if (!shouldSync) {
+      projects.value = loadLocal(userId)
+      remoteSyncState.value = 'idle'
+      resolveRemoteSync()
       return
     }
 
     projects.value = []
+    remoteSyncState.value = 'loading'
 
     try {
       await migrateBrowserProjects(userId)
@@ -454,11 +487,15 @@ export const useProjectStore = defineStore('projects', () => {
       (snapshot) => {
         projects.value = snapshot.docs.map(projectDoc => normalizeProject({ id: projectDoc.id, ...projectDoc.data() }))
         saveLocal(projects.value, userId)
+        remoteSyncState.value = 'ready'
+        resolveRemoteSync()
       },
       (error) => {
         console.error('Failed to sync account projects', error)
         syncError.value = 'Unable to sync your projects right now.'
         projects.value = loadLocal(userId)
+        remoteSyncState.value = 'ready'
+        resolveRemoteSync()
       }
     )
   }, { immediate: true, flush: 'sync' })
@@ -744,6 +781,8 @@ export const useProjectStore = defineStore('projects', () => {
     projects,
     sortedProjects,
     syncError,
+    remoteSyncState,
+    ensureRemoteProjectsLoaded,
     createProject,
     createProjectFromTemplate,
     duplicateProject,

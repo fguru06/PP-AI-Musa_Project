@@ -1,20 +1,23 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-let firebaseServicesPromise = null
+let firebaseAuthServicesPromise = null
+let firebaseFirestoreServicesPromise = null
 
-async function getFirebaseServices() {
-  if (!firebaseServicesPromise) {
-    firebaseServicesPromise = Promise.all([
-      import('@/firebase'),
-      import('firebase/firestore'),
-    ]).then(([firebaseModule, firestoreModule]) => ({
-      ...firebaseModule,
-      ...firestoreModule,
-    }))
+async function getFirebaseAuthServices() {
+  if (!firebaseAuthServicesPromise) {
+    firebaseAuthServicesPromise = import('@/lib/firebase/auth').then((module) => module.getFirebaseAuthServices())
   }
 
-  return firebaseServicesPromise
+  return firebaseAuthServicesPromise
+}
+
+async function getFirebaseFirestoreServices() {
+  if (!firebaseFirestoreServicesPromise) {
+    firebaseFirestoreServicesPromise = import('@/lib/firebase/firestore').then((module) => module.getFirebaseFirestoreServices())
+  }
+
+  return firebaseFirestoreServicesPromise
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -26,7 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function trackUserActivity(firebaseUser) {
     if (!firebaseUser) return
     try {
-      const { db, doc, setDoc } = await getFirebaseServices()
+      const { db, doc, setDoc } = await getFirebaseFirestoreServices()
       const userRef = doc(db, 'users', firebaseUser.uid)
       await setDoc(userRef, {
         email: firebaseUser.email,
@@ -43,7 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (authUnsubscribe) return
 
     try {
-      const { auth, onAuthStateChanged } = await getFirebaseServices()
+      const { auth, onAuthStateChanged } = await getFirebaseAuthServices()
       authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
         user.value = firebaseUser
         isAuthReady.value = true
@@ -62,7 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithGoogle() {
     try {
-      const { auth, googleProvider, signInWithPopup } = await getFirebaseServices()
+      const { auth, googleProvider, signInWithPopup } = await getFirebaseAuthServices()
       const result = await signInWithPopup(auth, googleProvider)
       user.value = result.user
       return result.user
@@ -74,7 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithMicrosoft() {
     try {
-      const { auth, microsoftProvider, signInWithPopup } = await getFirebaseServices()
+      const { auth, microsoftProvider, signInWithPopup } = await getFirebaseAuthServices()
       const result = await signInWithPopup(auth, microsoftProvider)
       user.value = result.user
       return result.user
@@ -86,7 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithEmail(email, password) {
     try {
-      const { auth, signInWithEmailAndPassword } = await getFirebaseServices()
+      const { auth, signInWithEmailAndPassword } = await getFirebaseAuthServices()
       const result = await signInWithEmailAndPassword(auth, email, password)
       user.value = result.user
       return result.user
@@ -98,7 +101,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function signUpWithEmail(email, password) {
     try {
-      const { auth, createUserWithEmailAndPassword, sendEmailVerification } = await getFirebaseServices()
+      const { auth, createUserWithEmailAndPassword, sendEmailVerification } = await getFirebaseAuthServices()
       const result = await createUserWithEmailAndPassword(auth, email, password)
       user.value = result.user
       // Send verification right away
@@ -112,13 +115,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function resendVerification() {
     if (user.value) {
-      const { sendEmailVerification } = await getFirebaseServices()
+      const { sendEmailVerification } = await getFirebaseAuthServices()
       await sendEmailVerification(user.value)
     }
   }
 
   async function reloadUser() {
-    const { auth } = await getFirebaseServices()
+    const { auth } = await getFirebaseAuthServices()
     if (auth.currentUser) {
       await auth.currentUser.reload()
       user.value = auth.currentUser
@@ -127,7 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     try {
-      const { auth, signOut } = await getFirebaseServices()
+      const { auth, signOut } = await getFirebaseAuthServices()
       await signOut(auth)
       user.value = null
     } catch (error) {

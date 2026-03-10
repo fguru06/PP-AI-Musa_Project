@@ -123,6 +123,15 @@ const projectPendingDelete = computed(() =>
   confirmDeleteId.value ? projectStore.getProject(confirmDeleteId.value) : null
 )
 
+watch(
+  () => [authStore.isAuthReady, authStore.user?.uid],
+  async ([isReady, userId]) => {
+    if (!isReady || !userId) return
+    await projectStore.ensureRemoteProjectsLoaded()
+  },
+  { immediate: true }
+)
+
 function openNewModal() {
   if (!currentUser.value) {
     openAuthModal('signin')

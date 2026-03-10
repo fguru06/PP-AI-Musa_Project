@@ -161,8 +161,11 @@ const ro = new ResizeObserver(calcScale)
 
 watch(
   () => authStore.isAuthReady,
-  (isReady) => {
+  async (isReady) => {
     if (isReady) {
+      if (authStore.user?.uid) {
+        await projectStore.ensureRemoteProjectsLoaded()
+      }
       if (!project.value) {
         router.push({ name: 'dashboard' })
         return
