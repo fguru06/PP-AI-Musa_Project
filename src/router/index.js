@@ -1,12 +1,9 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import DashboardView from '@/views/DashboardView.vue'
-import EditorView from '@/views/EditorView.vue'
-import PreviewView from '@/views/PreviewView.vue'
 
 const routes = [
-  { path: '/', name: 'dashboard', component: DashboardView },
-  { path: '/editor/:id', name: 'editor', component: EditorView, props: true },
-  { path: '/preview/:id', name: 'preview', component: PreviewView, props: true },
+  { path: '/', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
+  { path: '/editor/:id', name: 'editor', component: () => import('@/views/EditorView.vue'), props: true },
+  { path: '/preview/:id', name: 'preview', component: () => import('@/views/PreviewView.vue'), props: true },
 ]
 
 const router = createRouter({

@@ -18,6 +18,18 @@ const slideId = computed(() => editorStore.currentSlideId)
 const isSelected = computed(() => editorStore.selectedElementIds.includes(props.element.id))
 const isLocked = computed(() => props.element.locked)
 const isVisible = computed(() => props.element.visible !== false)
+const selectedAnimationType = computed(() => props.element.animations?.[0]?.type || 'auto')
+
+const quickAnimationOptions = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'none', label: 'None' },
+  { value: 'fade-up', label: 'Fade' },
+  { value: 'fade-left', label: 'Left' },
+  { value: 'fade-right', label: 'Right' },
+  { value: 'zoom-in', label: 'Zoom' },
+  { value: 'pop-in', label: 'Pop' },
+  { value: 'stagger-in', label: 'Stagger' },
+]
 
 // Drag state
 let isDragging = false
@@ -165,6 +177,24 @@ function getCursor(handle) {
   const map = { n: 'n-resize', ne: 'ne-resize', e: 'e-resize', se: 'se-resize', s: 's-resize', sw: 'sw-resize', w: 'w-resize', nw: 'nw-resize' }
   return map[handle] || 'auto'
 }
+
+function updateQuickAnimation(value) {
+  if (isLocked.value) return
+
+  if (value === 'auto') {
+    projectStore.updateElement(projectId.value, slideId.value, props.element.id, { animations: [] })
+    return
+  }
+
+  const current = props.element.animations?.[0] || {}
+  projectStore.updateElement(projectId.value, slideId.value, props.element.id, {
+    animations: [{
+      type: value,
+      delay: Math.max(0, Number(current.delay) || 0),
+      duration: Math.max(0.1, Number(current.duration) || 0.64),
+    }],
+  })
+}
 </script>
 
 <template>
@@ -179,6 +209,12 @@ function getCursor(handle) {
     <!-- Selection border + handles -->
     <template v-if="isSelected && !isLocked">
       <div class="selection-border" />
+      <div class="motion-chip" @mousedown.stop>
+        <span class="motion-chip-label">Motion</span>
+        <select class="motion-chip-select" :value="selectedAnimationType" @change="updateQuickAnimation($event.target.value)">
+          <option v-for="option in quickAnimationOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+        </select>
+      </div>
       <div
         v-for="h in HANDLES"
         :key="h"
@@ -207,6 +243,43 @@ function getCursor(handle) {
   z-index: 100;
 }
 .locked-border { border-color: var(--color-text-muted); border-style: dashed; }
+
+.motion-chip {
+  position: absolute;
+  top: -34px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(10, 16, 31, 0.92);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+  z-index: 110;
+}
+
+.motion-chip-label {
+  color: rgba(255,255,255,0.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.motion-chip-select {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.motion-chip-select option {
+  color: #111827;
+}
 
 .resize-handle {
   position: absolute;

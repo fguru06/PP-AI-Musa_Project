@@ -513,7 +513,7 @@ function buildRuntimeJS() {
     : [];
   var settings = project.settings || {};
   var theme = project.theme || {};
-  var state = { current: 0, timer: null };
+  var state = { current: 0, timer: null, mediaCleanup: null };
   var slideLookup = {};
   var slideNodes = [];
 
@@ -625,6 +625,7 @@ function buildRuntimeJS() {
 
     closeHotspots();
     pauseInactiveMedia(index);
+    bindMediaAdvance(index);
     triggerLoadInteractions(slideNodes[index]);
     scheduleAutoAdvance();
   }
@@ -633,10 +634,55 @@ function buildRuntimeJS() {
     window.clearTimeout(state.timer);
     if (!settings.autoPlay) return;
     var currentSlide = slides[state.current] || {};
+    if (currentSlide.advanceOnMediaEnd && getMediaAdvanceNode(state.current)) return;
     var duration = Number(currentSlide.duration || 0);
     if (duration > 0) {
       state.timer = window.setTimeout(function () { next(); }, duration * 1000);
     }
+  }
+
+  function bindMediaAdvance(index) {
+    if (typeof state.mediaCleanup === 'function') {
+      state.mediaCleanup();
+      state.mediaCleanup = null;
+    }
+
+    var slide = slides[index] || {};
+    if (!slide.advanceOnMediaEnd) return;
+
+    var media = getMediaAdvanceNode(index);
+    if (!media) return;
+
+    var onEnded = function () { next(); };
+    media.addEventListener('ended', onEnded);
+    state.mediaCleanup = function () {
+      media.removeEventListener('ended', onEnded);
+    };
+  }
+
+  function getMediaAdvanceNode(index) {
+    var slide = slides[index] || {};
+    var node = slideNodes[index];
+    if (!slide || !node || !Array.isArray(slide.elements)) return null;
+
+    var mediaElements = slide.elements.filter(function (element) {
+      if (['video', 'audio'].indexOf(element.type) === -1) return false;
+      var src = String((element.content && element.content.src) || '').trim();
+      if (!src) return false;
+      if (element.type === 'video' && (src.indexOf('youtube') !== -1 || src.indexOf('youtu.be') !== -1 || src.indexOf('vimeo') !== -1)) {
+        return false;
+      }
+      return true;
+    });
+
+    if (!mediaElements.length) return null;
+
+    var preferred = mediaElements.find(function (element) {
+      return Boolean(element.content && element.content.autoplay);
+    }) || mediaElements[0];
+
+    var selector = preferred.type === 'video' ? '.lf-video video' : '.lf-audio-player';
+    return node.querySelector(selector);
   }
 
   function closeHotspots() {

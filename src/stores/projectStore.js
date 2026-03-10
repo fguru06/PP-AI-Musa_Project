@@ -2,8 +2,22 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { v4 as uuid } from 'uuid'
 import { useAuthStore } from './authStore'
-import { db } from '@/firebase'
-import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc, writeBatch } from 'firebase/firestore'
+
+let firestoreServicesPromise = null
+
+async function getFirestoreServices() {
+  if (!firestoreServicesPromise) {
+    firestoreServicesPromise = Promise.all([
+      import('@/firebase'),
+      import('firebase/firestore'),
+    ]).then(([firebaseModule, firestoreModule]) => ({
+      ...firebaseModule,
+      ...firestoreModule,
+    }))
+  }
+
+  return firestoreServicesPromise
+}
 
 const STORAGE_KEY = 'elearn_projects'
 const LOCAL_ANON_KEY = `${STORAGE_KEY}_anonymous`
@@ -20,6 +34,60 @@ function makeDefaultTheme() {
   }
 }
 
+function defaultMotionPresets() {
+  return [
+    {
+      id: uuid(),
+      scope: 'single',
+      name: 'Hero Intro',
+      category: 'Presentation',
+      tags: ['hero', 'intro'],
+      type: 'fade-up-strong',
+      delay: 0,
+      duration: 0.8,
+      stepDelay: 0,
+      usageCount: 0,
+      lastUsedAt: 0,
+    },
+    {
+      id: uuid(),
+      scope: 'group',
+      name: 'Three Card Cascade',
+      category: 'Sequence',
+      tags: ['cards', 'stagger'],
+      type: 'stagger-in',
+      delay: 0,
+      duration: 0.72,
+      stepDelay: 0.14,
+      usageCount: 0,
+      lastUsedAt: 0,
+    },
+  ]
+}
+
+function normalizeMotionPresets(presets) {
+  if (!Array.isArray(presets) || !presets.length) return defaultMotionPresets()
+
+  return presets.map((preset) => ({
+    id: preset?.id || uuid(),
+    scope: preset?.scope === 'group' ? 'group' : 'single',
+    name: String(preset?.name || 'Untitled Preset').trim() || 'Untitled Preset',
+    category: String(preset?.category || '').trim(),
+    tags: Array.isArray(preset?.tags)
+      ? preset.tags.map((tag) => String(tag).trim()).filter(Boolean)
+      : String(preset?.tags || '')
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+    type: String(preset?.type || 'auto'),
+    delay: Math.max(0, Number(preset?.delay) || 0),
+    duration: Math.max(0.1, Number(preset?.duration) || 0.72),
+    stepDelay: Math.max(0, Number(preset?.stepDelay) || 0),
+    usageCount: Math.max(0, Number(preset?.usageCount) || 0),
+    lastUsedAt: Math.max(0, Number(preset?.lastUsedAt) || 0),
+  }))
+}
+
 function makeBlankSlide(order = 0) {
   return {
     id: uuid(),
@@ -33,6 +101,7 @@ function makeBlankSlide(order = 0) {
     order,
     transition: 'none',
     duration: 0,
+    advanceOnMediaEnd: false,
   }
 }
 
@@ -58,6 +127,7 @@ function makeNewProject(name = 'Untitled Project') {
       showProgress: true,
       showNavControls: true,
       allowKeyboardNav: true,
+      motionPresets: defaultMotionPresets(),
     },
   }
 }
@@ -96,6 +166,7 @@ function makeTemplateSlide(definition, order = 0) {
     order,
     transition: definition.transition || 'none',
     duration: definition.duration || 0,
+    advanceOnMediaEnd: Boolean(definition.advanceOnMediaEnd),
   }
 }
 
@@ -270,16 +341,21 @@ function clearLocal(userId = null) {
   } catch {}
 }
 
-function projectsCollection(userId) {
-  return collection(db, 'users', userId, 'projects')
-}
-
 function normalizeProject(project) {
   return {
     ...project,
     description: project.description || '',
     thumbnail: project.thumbnail || '',
-    slides: Array.isArray(project.slides) ? project.slides : [makeBlankSlide(0)],
+    slides: Array.isArray(project.slides)
+      ? project.slides.map((slide, index) => ({
+          ...makeBlankSlide(index),
+          ...slide,
+          order: Number(slide?.order ?? index),
+          duration: Number(slide?.duration || 0),
+          advanceOnMediaEnd: Boolean(slide?.advanceOnMediaEnd),
+          elements: Array.isArray(slide?.elements) ? slide.elements : [],
+        }))
+      : [makeBlankSlide(0)],
     theme: { ...makeDefaultTheme(), ...(project.theme || {}) },
     createdAt: Number(project.createdAt) || Date.now(),
     updatedAt: Number(project.updatedAt) || Date.now(),
@@ -295,18 +371,23 @@ function normalizeProject(project) {
       showNavControls: true,
       allowKeyboardNav: true,
       ...(project.settings || {}),
+      motionPresets: normalizeMotionPresets(project.settings?.motionPresets),
     },
   }
 }
 
 async function upsertRemoteProject(userId, project) {
   if (!userId || !project?.id) return
-  await setDoc(doc(projectsCollection(userId), project.id), normalizeProject(project))
+  const { db, collection, doc, setDoc } = await getFirestoreServices()
+  const collectionRef = collection(db, 'users', userId, 'projects')
+  await setDoc(doc(collectionRef, project.id), normalizeProject(project))
 }
 
 async function deleteRemoteProject(userId, projectId) {
   if (!userId || !projectId) return
-  await deleteDoc(doc(projectsCollection(userId), projectId))
+  const { db, collection, doc, deleteDoc } = await getFirestoreServices()
+  const collectionRef = collection(db, 'users', userId, 'projects')
+  await deleteDoc(doc(collectionRef, projectId))
 }
 
 async function migrateBrowserProjects(userId) {
@@ -315,7 +396,8 @@ async function migrateBrowserProjects(userId) {
   const cachedProjects = [...loadLocal(), ...loadLocal(userId)]
   if (!cachedProjects.length) return
 
-  const collectionRef = projectsCollection(userId)
+  const { db, collection, doc, getDocs, writeBatch } = await getFirestoreServices()
+  const collectionRef = collection(db, 'users', userId, 'projects')
   const existingSnapshot = await getDocs(collectionRef)
   const existingIds = new Set(existingSnapshot.docs.map(projectDoc => projectDoc.id))
   const batch = writeBatch(db)
@@ -364,8 +446,11 @@ export const useProjectStore = defineStore('projects', () => {
       syncError.value = 'Some browser-saved projects could not be migrated to your account.'
     }
 
+    const { db, collection, onSnapshot } = await getFirestoreServices()
+    const collectionRef = collection(db, 'users', userId, 'projects')
+
     stopProjectsSync = onSnapshot(
-      projectsCollection(userId),
+      collectionRef,
       (snapshot) => {
         projects.value = snapshot.docs.map(projectDoc => normalizeProject({ id: projectDoc.id, ...projectDoc.data() }))
         saveLocal(projects.value, userId)

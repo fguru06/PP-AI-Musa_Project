@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, provide, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, provide, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import ElementWrapper from './ElementWrapper.vue'
@@ -30,6 +30,84 @@ const project = computed(() => projectStore.getProject(editorStore.projectId))
 const slide = computed(() => project.value?.slides?.find(s => s.id === editorStore.currentSlideId))
 const slides = computed(() => [...(project.value?.slides || [])].sort((a, b) => a.order - b.order))
 const currentSlideIndex = computed(() => slides.value.findIndex(s => s.id === editorStore.currentSlideId))
+const projectSettings = computed(() => ({
+  autoPlay: false,
+  motionPresets: [],
+  ...(project.value?.settings || {}),
+}))
+const groupMotionPresets = computed(() =>
+  (Array.isArray(projectSettings.value.motionPresets) ? projectSettings.value.motionPresets : []).filter((preset) => preset.scope === 'group')
+)
+const selectedElements = computed(() => {
+  const ids = new Set(editorStore.selectedElementIds)
+  return sortedElements.value.filter((element) => ids.has(element.id))
+})
+const canvasGroupPresetId = ref('')
+const playbackBadge = computed(() => {
+  if (!slide.value) {
+    return { label: 'Manual', tone: 'manual' }
+  }
+
+  if (slide.value.advanceOnMediaEnd) {
+    return { label: 'Media Advance', tone: 'media' }
+  }
+
+  if (projectSettings.value.autoPlay && Number(slide.value.duration || 0) > 0) {
+    return { label: `Auto ${Number(slide.value.duration).toFixed(Number(slide.value.duration) % 1 === 0 ? 0 : 1)}s`, tone: 'auto' }
+  }
+
+  return { label: 'Manual', tone: 'manual' }
+})
+
+function applyCanvasGroupPreset() {
+  const preset = groupMotionPresets.value.find((item) => item.id === canvasGroupPresetId.value)
+  if (!preset || !selectedElements.value.length) return
+
+  const ordered = [...selectedElements.value].sort((a, b) => {
+    if ((a.y || 0) !== (b.y || 0)) return (a.y || 0) - (b.y || 0)
+    return (a.x || 0) - (b.x || 0)
+  })
+
+  ordered.forEach((element, index) => {
+    if (preset.type === 'auto') {
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { animations: [] })
+      return
+    }
+
+    projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, {
+      animations: [{
+        type: preset.type,
+        delay: Math.max(0, Number(preset.delay) || 0) + (index * Math.max(0, Number(preset.stepDelay) || 0)),
+        duration: Math.max(0.1, Number(preset.duration) || 0.72),
+      }],
+    })
+  })
+
+  projectStore.updateProject(editorStore.projectId, {
+    settings: {
+      ...projectSettings.value,
+      motionPresets: (projectSettings.value.motionPresets || []).map((item) =>
+        item.id === preset.id
+          ? {
+              ...item,
+              usageCount: Math.max(0, Number(item.usageCount || 0)) + 1,
+              lastUsedAt: Date.now(),
+            }
+          : item
+      ),
+    },
+  })
+}
+
+function syncCanvasPresetSelection() {
+  if (!groupMotionPresets.value.length) {
+    canvasGroupPresetId.value = ''
+    return
+  }
+  if (!groupMotionPresets.value.some((preset) => preset.id === canvasGroupPresetId.value)) {
+    canvasGroupPresetId.value = groupMotionPresets.value[0].id
+  }
+}
 
 const sortedElements = computed(() =>
   [...(slide.value?.elements || [])].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
@@ -66,8 +144,13 @@ onMounted(() => {
   recalcScale()
   ro = new ResizeObserver(recalcScale)
   if (canvasContainerRef.value) ro.observe(canvasContainerRef.value)
+  syncCanvasPresetSelection()
 })
 onBeforeUnmount(() => ro?.disconnect())
+
+watch(groupMotionPresets, () => {
+  syncCanvasPresetSelection()
+}, { deep: true, immediate: true })
 
 // Hovered and drag states
 const isDragging = ref(false)
@@ -376,6 +459,14 @@ function goNextSlide() {
           @drop="onCanvasDropFile"
           @contextmenu.prevent
         >
+          <div v-if="editorStore.multiSelection && groupMotionPresets.length" class="selection-preset-chip" @mousedown.stop>
+            <span class="selection-preset-label">Sequence</span>
+            <select v-model="canvasGroupPresetId" class="selection-preset-select">
+              <option v-for="preset in groupMotionPresets" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+            </select>
+            <button type="button" class="selection-preset-apply" @click.stop="applyCanvasGroupPreset">Apply</button>
+          </div>
+
           <!-- Elements -->
           <ElementWrapper
             v-for="el in sortedElements"
@@ -419,6 +510,8 @@ function goNextSlide() {
         <span>{{ CANVAS_W }} × {{ CANVAS_H }}px</span>
         <span>·</span>
         <span>{{ slide.elements?.length || 0 }} elements</span>
+        <span>·</span>
+        <span :class="['playback-badge', `playback-badge-${playbackBadge.tone}`]">{{ playbackBadge.label }}</span>
         <span v-if="editorStore.hasSelection">· {{ editorStore.selectedElementIds.length }} selected</span>
         <button class="bar-btn ai" @click="editorStore.setRightPanel('ai')">AI</button>
       </div>
@@ -467,6 +560,52 @@ function goNextSlide() {
   overflow: hidden;
   cursor: default;
 }
+.selection-preset-chip {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(10, 16, 31, 0.92);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 14px 30px rgba(0,0,0,.24);
+  z-index: 30;
+}
+.selection-preset-label {
+  color: rgba(255,255,255,.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.selection-preset-select {
+  min-width: 150px;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+}
+.selection-preset-select option {
+  color: #111827;
+}
+.selection-preset-apply {
+  border: 1px solid rgba(108,71,255,.35);
+  background: rgba(108,71,255,.18);
+  color: #f5f3ff;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.selection-preset-apply:hover {
+  background: rgba(108,71,255,.28);
+}
 .canvas-info-bar {
   position: absolute;
   bottom: var(--space-3);
@@ -500,6 +639,33 @@ function goNextSlide() {
 .slide-index {
   min-width: 40px;
   text-align: center;
+}
+.playback-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+.playback-badge-manual {
+  color: rgba(255,255,255,.72);
+  background: rgba(255,255,255,.07);
+  border-color: rgba(255,255,255,.1);
+}
+.playback-badge-auto {
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, .18);
+  border-color: rgba(96, 165, 250, .34);
+}
+.playback-badge-media {
+  color: #bbf7d0;
+  background: rgba(22, 163, 74, .18);
+  border-color: rgba(74, 222, 128, .34);
 }
 .drop-hint {
   position: absolute;

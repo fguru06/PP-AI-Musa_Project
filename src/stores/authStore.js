@@ -1,16 +1,32 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { auth, db, googleProvider, microsoftProvider, signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification } from '@/firebase'
-import { doc, setDoc } from 'firebase/firestore'
+
+let firebaseServicesPromise = null
+
+async function getFirebaseServices() {
+  if (!firebaseServicesPromise) {
+    firebaseServicesPromise = Promise.all([
+      import('@/firebase'),
+      import('firebase/firestore'),
+    ]).then(([firebaseModule, firestoreModule]) => ({
+      ...firebaseModule,
+      ...firestoreModule,
+    }))
+  }
+
+  return firebaseServicesPromise
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const isAuthReady = ref(false)
+  let authUnsubscribe = null
 
   // Track user in Firestore
   async function trackUserActivity(firebaseUser) {
     if (!firebaseUser) return
     try {
+      const { db, doc, setDoc } = await getFirebaseServices()
       const userRef = doc(db, 'users', firebaseUser.uid)
       await setDoc(userRef, {
         email: firebaseUser.email,
@@ -23,18 +39,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // Listen to auth state changes
-  onAuthStateChanged(auth, (firebaseUser) => {
-    user.value = firebaseUser
-    isAuthReady.value = true
-    
-    if (firebaseUser) {
-      trackUserActivity(firebaseUser)
+  async function initAuth() {
+    if (authUnsubscribe) return
+
+    try {
+      const { auth, onAuthStateChanged } = await getFirebaseServices()
+      authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        user.value = firebaseUser
+        isAuthReady.value = true
+
+        if (firebaseUser) {
+          trackUserActivity(firebaseUser)
+        }
+      })
+    } catch (error) {
+      console.error('Failed to initialize Firebase auth', error)
+      isAuthReady.value = true
     }
-  })
+  }
+
+  initAuth()
 
   async function loginWithGoogle() {
     try {
+      const { auth, googleProvider, signInWithPopup } = await getFirebaseServices()
       const result = await signInWithPopup(auth, googleProvider)
       user.value = result.user
       return result.user
@@ -46,6 +74,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithMicrosoft() {
     try {
+      const { auth, microsoftProvider, signInWithPopup } = await getFirebaseServices()
       const result = await signInWithPopup(auth, microsoftProvider)
       user.value = result.user
       return result.user
@@ -57,6 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithEmail(email, password) {
     try {
+      const { auth, signInWithEmailAndPassword } = await getFirebaseServices()
       const result = await signInWithEmailAndPassword(auth, email, password)
       user.value = result.user
       return result.user
@@ -68,6 +98,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function signUpWithEmail(email, password) {
     try {
+      const { auth, createUserWithEmailAndPassword, sendEmailVerification } = await getFirebaseServices()
       const result = await createUserWithEmailAndPassword(auth, email, password)
       user.value = result.user
       // Send verification right away
@@ -81,11 +112,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function resendVerification() {
     if (user.value) {
+      const { sendEmailVerification } = await getFirebaseServices()
       await sendEmailVerification(user.value)
     }
   }
 
   async function reloadUser() {
+    const { auth } = await getFirebaseServices()
     if (auth.currentUser) {
       await auth.currentUser.reload()
       user.value = auth.currentUser
@@ -94,6 +127,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     try {
+      const { auth, signOut } = await getFirebaseServices()
       await signOut(auth)
       user.value = null
     } catch (error) {
@@ -110,6 +144,7 @@ export const useAuthStore = defineStore('auth', () => {
     signUpWithEmail,
     resendVerification,
     reloadUser,
-    logout
+    logout,
+    initAuth,
   }
 })

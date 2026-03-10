@@ -12,16 +12,64 @@ const authStore = useAuthStore()
 const projectId = computed(() => route.params.id)
 const project = computed(() => projectStore.getProject(projectId.value))
 const slides = computed(() => [...(project.value?.slides || [])].sort((a, b) => a.order - b.order))
+const presentationSettings = computed(() => ({
+  autoPlay: false,
+  loop: false,
+  showProgress: true,
+  showNavControls: true,
+  allowKeyboardNav: true,
+  ...(project.value?.settings || {}),
+}))
 
 const currentIndex = ref(0)
 const containerRef = ref(null)
 const scale = ref(1)
 const showUI = ref(true)
 let uiTimer = null
+let autoAdvanceTimer = null
 
 const currentSlide = computed(() => slides.value[currentIndex.value] || null)
 const previewSource = computed(() => typeof route.query.from === 'string' ? route.query.from : 'dashboard')
 const previewBackLabel = computed(() => previewSource.value === 'editor' ? 'Back to Editor' : 'Back to Dashboard')
+const currentSlideElements = computed(() =>
+  [...(currentSlide.value?.elements || [])].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+)
+const slideTransitionName = computed(() => {
+  switch (currentSlide.value?.transition) {
+    case 'fade': return 'slide-fade'
+    case 'slide': return 'slide-shift'
+    case 'zoom': return 'slide-zoom'
+    case 'flip': return 'slide-flip'
+    default: return 'slide-fade'
+  }
+})
+const currentSlideDurationMs = computed(() => Math.max(0, Number(currentSlide.value?.duration || 0)) * 1000)
+const mediaAdvanceElementId = computed(() => {
+  if (!currentSlide.value?.advanceOnMediaEnd) return null
+
+  const elements = currentSlideElements.value.filter((element) => {
+    if (!['video', 'audio'].includes(element.type)) return false
+    const src = String(element.content?.src || '').trim()
+    if (!src) return false
+    if (element.type === 'video' && (src.includes('youtube') || src.includes('youtu.be') || src.includes('vimeo'))) {
+      return false
+    }
+    return true
+  })
+
+  const autoplayElement = elements.find((element) => element.content?.autoplay)
+  return autoplayElement?.id || elements[0]?.id || null
+})
+const canAutoAdvance = computed(() =>
+  presentationSettings.value.autoPlay &&
+  currentSlideDurationMs.value > 0 &&
+  slides.value.length > 1 &&
+  !mediaAdvanceElementId.value
+)
+const deckProgress = computed(() => {
+  if (!slides.value.length) return 0
+  return ((currentIndex.value + 1) / slides.value.length) * 100
+})
 
 const CANVAS_W = 960
 const CANVAS_H = 540
@@ -34,18 +82,43 @@ function calcScale() {
 }
 
 function goNext() {
-  if (currentIndex.value < slides.value.length - 1) currentIndex.value++
+  if (currentIndex.value < slides.value.length - 1) {
+    currentIndex.value++
+    return
+  }
+  if (presentationSettings.value.loop) {
+    currentIndex.value = 0
+  }
 }
 function goPrev() {
-  if (currentIndex.value > 0) currentIndex.value--
+  if (currentIndex.value > 0) {
+    currentIndex.value--
+    return
+  }
+  if (presentationSettings.value.loop) {
+    currentIndex.value = slides.value.length - 1
+  }
 }
 function goTo(i) {
   currentIndex.value = i
 }
 
+function advanceFromMedia(elementId) {
+  if (!mediaAdvanceElementId.value || elementId !== mediaAdvanceElementId.value) return
+  goNext()
+}
+
 function handleKey(e) {
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') goNext()
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev()
+  if (presentationSettings.value.allowKeyboardNav !== false) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault()
+      goNext()
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      goPrev()
+    }
+  }
   if (e.key === 'Escape') exitPreview()
 }
 
@@ -71,6 +144,19 @@ function revealUI() {
   uiTimer = setTimeout(() => { showUI.value = false }, 3000)
 }
 
+function clearAutoAdvanceTimer() {
+  clearTimeout(autoAdvanceTimer)
+  autoAdvanceTimer = null
+}
+
+function scheduleAutoAdvance() {
+  clearAutoAdvanceTimer()
+  if (!canAutoAdvance.value) return
+  autoAdvanceTimer = setTimeout(() => {
+    goNext()
+  }, currentSlideDurationMs.value)
+}
+
 const ro = new ResizeObserver(calcScale)
 
 watch(
@@ -93,12 +179,22 @@ onMounted(() => {
     calcScale()
   }
   revealUI()
+  scheduleAutoAdvance()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKey)
   ro.disconnect()
   clearTimeout(uiTimer)
+  clearAutoAdvanceTimer()
 })
+
+watch(
+  [currentIndex, slides, currentSlideDurationMs, canAutoAdvance],
+  () => {
+    scheduleAutoAdvance()
+  },
+  { deep: true }
+)
 
 // Element rendering helpers
 function slideBackground(slide) {
@@ -123,6 +219,52 @@ function elementStyle(el) {
     transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
     overflow: 'hidden',
     pointerEvents: ['button', 'hotspot', 'quiz'].includes(el.type) ? 'auto' : 'none',
+  }
+}
+
+function elementMotionPreset(el) {
+  const customAnimation = Array.isArray(el.animations) ? el.animations[0] : null
+  const customType = customAnimation?.type || customAnimation?.name
+  if (customType) {
+    return customType
+      .toString()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+  }
+
+  switch (el.type) {
+    case 'heading': return 'fade-up-strong'
+    case 'text': return 'fade-up'
+    case 'image': return 'zoom-in'
+    case 'shape': return 'soft-pop'
+    case 'button': return 'pop-in'
+    case 'quiz': return 'fade-up-strong'
+    case 'hotspot': return 'pop-in'
+    case 'video':
+    case 'audio': return 'fade-up'
+    default: return 'fade-up'
+  }
+}
+
+function animatedElementStyle(el, index) {
+  const baseStyle = elementStyle(el)
+  const customAnimation = Array.isArray(el.animations) ? el.animations[0] : null
+  const motionPreset = elementMotionPreset(el)
+  const customDelay = customAnimation?.delay != null
+    ? Math.max(0, Number(customAnimation.delay) || 0) * 1000
+    : 0
+  const staggerDelay = motionPreset === 'stagger-in' ? index * 140 : Math.min(index * 90, 720)
+  const delay = customAnimation?.delay != null
+    ? customDelay + (motionPreset === 'stagger-in' ? index * 140 : 0)
+    : staggerDelay
+  const duration = customAnimation?.duration != null
+    ? Math.max(100, Number(customAnimation.duration) * 1000 || 640)
+    : motionPreset === 'stagger-in' ? 720 : el.type === 'heading' ? 720 : el.type === 'image' ? 780 : 640
+
+  return {
+    ...baseStyle,
+    '--enter-delay': `${delay}ms`,
+    '--enter-duration': `${duration}ms`,
   }
 }
 
@@ -159,17 +301,25 @@ function toggleHotspot(elId) {
     <div class="preview-orb preview-orb-left"></div>
     <div class="preview-orb preview-orb-right"></div>
     <div class="preview-grid"></div>
+    <div v-if="presentationSettings.showProgress !== false" class="preview-progress-track">
+      <div class="preview-progress-bar" :style="{ width: `${deckProgress}%`, background: project?.theme?.primaryColor || '#6c47ff' }"></div>
+    </div>
 
     <!-- Slide canvas container -->
     <div class="canvas-bg" ref="containerRef">
-      <div class="preview-stage" v-if="currentSlide">
-        <div
-          class="slide-canvas"
-          :style="[slideBackground(currentSlide), { transform: `scale(${scale})`, transformOrigin: 'center center' }]"
-        >
-          <!-- Elements -->
-          <template v-for="el in [...(currentSlide.elements || [])].sort((a,b) => a.zIndex - b.zIndex)" :key="el.id">
-            <div :style="elementStyle(el)" v-if="el.visible !== false">
+      <Transition :name="slideTransitionName" mode="out-in">
+        <div class="preview-stage" v-if="currentSlide" :key="currentSlide.id">
+          <div
+            class="slide-canvas"
+            :style="[slideBackground(currentSlide), { transform: `scale(${scale})`, transformOrigin: 'center center' }]"
+          >
+            <!-- Elements -->
+            <template v-for="(el, index) in currentSlideElements" :key="el.id">
+              <div
+                v-if="el.visible !== false"
+                :class="['preview-element', `motion-${elementMotionPreset(el)}`]"
+                :style="animatedElementStyle(el, index)"
+              >
 
             <!-- Text / Heading -->
             <div v-if="el.type === 'text' || el.type === 'heading'"
@@ -259,7 +409,16 @@ function toggleHotspot(elId) {
                 :src="el.content.src"
                 width="100%" height="100%" frameborder="0" allowfullscreen allow="autoplay"
               />
-              <video v-else-if="el.content.src" :src="el.content.src" controls style="width:100%;height:100%;object-fit:contain" />
+              <video
+                v-else-if="el.content.src"
+                :src="el.content.src"
+                :controls="el.content.controls !== false"
+                :autoplay="Boolean(el.content.autoplay)"
+                :loop="Boolean(el.content.loop)"
+                :muted="Boolean(el.content.muted)"
+                style="width:100%;height:100%;object-fit:contain"
+                @ended="advanceFromMedia(el.id)"
+              />
               <div v-else style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:13px;">No video source</div>
             </div>
 
@@ -267,7 +426,15 @@ function toggleHotspot(elId) {
             <div v-else-if="el.type === 'audio'" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:8px;box-sizing:border-box;">
               <span style="font-size:28px">🎵</span>
               <span style="font-size:12px;color:#aaa">{{ el.content.label || 'Audio' }}</span>
-              <audio v-if="el.content.src" :src="el.content.src" controls style="width:100%;max-width:240px;" />
+              <audio
+                v-if="el.content.src"
+                :src="el.content.src"
+                :controls="el.content.controls !== false"
+                :autoplay="Boolean(el.content.autoplay)"
+                :loop="Boolean(el.content.loop)"
+                style="width:100%;max-width:240px;"
+                @ended="advanceFromMedia(el.id)"
+              />
             </div>
 
             <!-- Quiz -->
@@ -310,10 +477,11 @@ function toggleHotspot(elId) {
               </div>
             </div>
 
-            </div>
-          </template>
+              </div>
+            </template>
+          </div>
         </div>
-      </div>
+      </Transition>
     </div>
 
     <!-- Navigation UI (fades on idle) -->
@@ -330,15 +498,15 @@ function toggleHotspot(elId) {
         </div>
 
         <!-- Side nav buttons -->
-        <button class="nav-btn nav-btn-left" @click="goPrev" :disabled="currentIndex === 0">
+        <button v-if="presentationSettings.showNavControls !== false" class="nav-btn nav-btn-left" @click="goPrev" :disabled="!presentationSettings.loop && currentIndex === 0">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <button class="nav-btn nav-btn-right" @click="goNext" :disabled="currentIndex === slides.length - 1">
+        <button v-if="presentationSettings.showNavControls !== false" class="nav-btn nav-btn-right" @click="goNext" :disabled="!presentationSettings.loop && currentIndex === slides.length - 1">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
         </button>
 
         <!-- Dot nav -->
-        <div class="dot-nav">
+        <div v-if="presentationSettings.showNavControls !== false" class="dot-nav">
           <button
             v-for="(s, i) in slides" :key="s.id"
             :class="['dot', i === currentIndex && 'active']"
@@ -401,6 +569,22 @@ function toggleHotspot(elId) {
   mask-image: radial-gradient(circle at center, rgba(0,0,0,0.55), transparent 88%);
 }
 
+.preview-progress-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  z-index: 24;
+}
+
+.preview-progress-bar {
+  height: 100%;
+  transition: width 220ms ease;
+  box-shadow: 0 0 18px rgba(255,255,255,0.18);
+}
+
 .canvas-bg {
   width: 100%;
   height: 100%;
@@ -436,6 +620,43 @@ function toggleHotspot(elId) {
   overflow: hidden;
   border-radius: 18px;
   box-shadow: 0 30px 90px rgba(0,0,0,.5);
+}
+
+.preview-element {
+  animation-duration: var(--enter-duration, 640ms);
+  animation-delay: var(--enter-delay, 0ms);
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform, filter;
+}
+
+.motion-fade-up {
+  animation-name: motion-fade-up;
+}
+
+.motion-fade-up-strong {
+  animation-name: motion-fade-up-strong;
+}
+
+.motion-fade-left {
+  animation-name: motion-fade-left;
+}
+
+.motion-fade-right {
+  animation-name: motion-fade-right;
+}
+
+.motion-zoom-in {
+  animation-name: motion-zoom-in;
+}
+
+.motion-soft-pop,
+.motion-pop-in {
+  animation-name: motion-pop-in;
+}
+
+.motion-stagger-in {
+  animation-name: motion-stagger-in;
 }
 
 /* Preview UI */
@@ -532,6 +753,152 @@ function toggleHotspot(elId) {
 .ui-fade-enter-active, .ui-fade-leave-active { transition: opacity .4s; }
 .ui-fade-enter-from, .ui-fade-leave-to { opacity: 0; }
 
+.slide-fade-enter-active,
+.slide-fade-leave-active,
+.slide-shift-enter-active,
+.slide-shift-leave-active,
+.slide-zoom-enter-active,
+.slide-zoom-leave-active,
+.slide-flip-enter-active,
+.slide-flip-leave-active {
+  transition: opacity 340ms ease, transform 520ms cubic-bezier(0.22, 1, 0.36, 1), filter 420ms ease;
+}
+
+.slide-fade-enter-from,
+.slide-shift-enter-from,
+.slide-zoom-enter-from,
+.slide-flip-enter-from {
+  opacity: 0;
+}
+
+.slide-fade-leave-to,
+.slide-shift-leave-to,
+.slide-zoom-leave-to,
+.slide-flip-leave-to {
+  opacity: 0;
+}
+
+.slide-shift-enter-from {
+  transform: translateX(44px);
+  filter: blur(8px);
+}
+
+.slide-shift-leave-to {
+  transform: translateX(-36px);
+  filter: blur(10px);
+}
+
+.slide-zoom-enter-from {
+  transform: scale(0.94);
+  filter: blur(8px);
+}
+
+.slide-zoom-leave-to {
+  transform: scale(1.03);
+  filter: blur(10px);
+}
+
+.slide-flip-enter-from {
+  transform: perspective(1200px) rotateY(10deg) scale(0.98);
+  filter: blur(6px);
+}
+
+.slide-flip-leave-to {
+  transform: perspective(1200px) rotateY(-8deg) scale(1.01);
+  filter: blur(8px);
+}
+
+@keyframes motion-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes motion-fade-up-strong {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes motion-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes motion-fade-left {
+  from {
+    opacity: 0;
+    transform: translateX(-26px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes motion-fade-right {
+  from {
+    opacity: 0;
+    transform: translateX(26px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes motion-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88) translateY(12px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.02) translateY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes motion-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
 .popup-enter-active, .popup-leave-active { transition: opacity .2s, transform .2s; }
 .popup-enter-from, .popup-leave-to { opacity: 0; transform: translateX(-6px); }
 
@@ -574,6 +941,22 @@ function toggleHotspot(elId) {
 
   .dot-nav {
     bottom: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-element,
+  .slide-fade-enter-active,
+  .slide-fade-leave-active,
+  .slide-shift-enter-active,
+  .slide-shift-leave-active,
+  .slide-zoom-enter-active,
+  .slide-zoom-leave-active,
+  .slide-flip-enter-active,
+  .slide-flip-leave-active {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
 }
 </style>
