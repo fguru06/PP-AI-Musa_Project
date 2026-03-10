@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/projectStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useAIStore } from '@/stores/aiStore'
 import Modal from '@/components/common/Modal.vue'
 
 const router = useRouter()
 const projectStore = useProjectStore()
 const editorStore = useEditorStore()
 const authStore = useAuthStore()
+const aiStore = useAIStore()
 
 const showNewModal = ref(false)
 const showImportModal = ref(false)
@@ -26,6 +28,17 @@ const authEmail = ref('')
 const authPassword = ref('')
 const authError = ref('')
 const authLoading = ref(false)
+const showAIModal = ref(false)
+const aiMode = ref('quiz')
+const aiTopic = ref('')
+const aiContext = ref('')
+const aiProjectName = ref('')
+const aiSlideCount = ref(5)
+const aiQuestionCount = ref(5)
+const aiDifficulty = ref('intermediate')
+const aiQuestionType = ref('multiple-choice')
+const aiCreationError = ref('')
+const aiSubmitting = ref(false)
 
 const currentUser = computed(() => {
   if (authStore.user) {
@@ -36,6 +49,21 @@ const currentUser = computed(() => {
     }
   }
   return null
+})
+
+const aiProjectNamePlaceholder = computed(() => {
+  const topic = aiTopic.value.trim()
+  if (!topic) {
+    return aiMode.value === 'quiz' ? 'AI Quiz Project' : 'AI Slide Deck'
+  }
+  return aiMode.value === 'quiz' ? `${topic} Quiz` : `${topic} Slide Deck`
+})
+
+const aiPrimaryActionLabel = computed(() => {
+  if (aiSubmitting.value || aiStore.isGenerating) {
+    return aiMode.value === 'quiz' ? 'Creating quiz...' : 'Creating slides...'
+  }
+  return aiMode.value === 'quiz' ? 'Create quiz project' : 'Create slide project'
 })
 
 const authProviders = [
@@ -110,6 +138,28 @@ function openImportModal() {
   showImportModal.value = true
 }
 
+function resetAICreationForm(mode = 'quiz') {
+  aiMode.value = mode
+  aiTopic.value = ''
+  aiContext.value = ''
+  aiProjectName.value = ''
+  aiSlideCount.value = 5
+  aiQuestionCount.value = 5
+  aiDifficulty.value = 'intermediate'
+  aiQuestionType.value = 'multiple-choice'
+  aiCreationError.value = ''
+}
+
+function openAICreationModal(mode = 'quiz') {
+  if (!currentUser.value) {
+    openAuthModal('signin')
+    return
+  }
+  resetAICreationForm(mode)
+  showAIModal.value = true
+  setTimeout(() => document.getElementById('ai-topic-input')?.focus(), 50)
+}
+
 function createProject() {
   if (!newProjectName.value.trim()) return
   const project = projectStore.createProject(newProjectName.value.trim())
@@ -125,6 +175,534 @@ function openProject(id) {
 function createFromTemplate(card) {
   const project = projectStore.createProjectFromTemplate(card.id, card.title, `${card.subtitle} template`)
   openProject(project.id)
+}
+
+function aiPalette(mode = aiMode.value) {
+  if (mode === 'quiz') {
+    return {
+      primary: '#5b21b6',
+      secondary: '#f59e0b',
+      surface: '#fffaf0',
+      text: '#111827',
+      muted: '#475569',
+      gradient: 'linear-gradient(135deg, #faf5ff 0%, #fff7ed 100%)',
+      panel: '#ffffff',
+      accentSoft: '#f3e8ff',
+    }
+  }
+
+  return {
+    primary: '#2563eb',
+    secondary: '#14b8a6',
+    surface: '#f8fbff',
+    text: '#0f172a',
+    muted: '#475569',
+    gradient: 'linear-gradient(135deg, #eff6ff 0%, #f0fdfa 100%)',
+    panel: '#ffffff',
+    accentSoft: '#dbeafe',
+  }
+}
+
+function normalizeAIGeneratedSlide(content) {
+  const parsed = content && typeof content === 'object' ? content : {}
+  const rawBullets = Array.isArray(parsed.bullets)
+    ? parsed.bullets
+    : typeof parsed.bullets === 'string'
+      ? parsed.bullets.split('\n')
+      : []
+
+  return {
+    title: String(parsed.title || aiTopic.value || 'Untitled Slide').trim(),
+    subtitle: String(parsed.subtitle || '').trim(),
+    bullets: rawBullets
+      .map(item => String(item || '').replace(/^\s*[-•]\s*/, '').trim())
+      .filter(Boolean),
+    callout: String(parsed.callout || '').trim(),
+    slideType: String(parsed.slideType || 'general').trim(),
+  }
+}
+
+function buildSlideFromGeneratedContent(projectId, slideId, content, index = 0) {
+  const normalized = normalizeAIGeneratedSlide(content)
+  const palette = aiPalette('deck')
+  const isIntro = index === 0 || normalized.slideType === 'intro'
+  const isSummary = normalized.slideType === 'summary'
+  const tagLabel = isIntro
+    ? 'AI lesson opener'
+    : isSummary
+      ? 'AI summary slide'
+      : 'AI learning slide'
+  const bulletTop = normalized.subtitle ? 228 : 196
+  const cardHeight = Math.min(190 + (normalized.bullets.length * 14), 238)
+  const calloutTop = isIntro ? 174 : 190
+  const backgroundGradient = isIntro
+    ? 'linear-gradient(135deg, #eff6ff 0%, #e0f2fe 48%, #ecfeff 100%)'
+    : isSummary
+      ? 'linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%)'
+      : palette.gradient
+
+  projectStore.updateSlide(projectId, slideId, {
+    title: normalized.title,
+    notes: normalized.callout || '',
+    order: index,
+    backgroundType: 'gradient',
+    backgroundGradient,
+    background: palette.surface,
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 720,
+    y: 28,
+    width: 180,
+    height: 180,
+    content: {
+      shapeType: 'circle',
+      fillColor: palette.accentSoft,
+      borderColor: 'transparent',
+      borderWidth: 0,
+      opacity: 0.9,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 760,
+    y: 74,
+    width: 94,
+    height: 94,
+    content: {
+      shapeType: 'circle',
+      fillColor: '#ffffff',
+      borderColor: 'transparent',
+      borderWidth: 0,
+      opacity: 0.82,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 68,
+    y: 40,
+    width: 148,
+    height: 30,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: '#ffffff',
+      borderColor: palette.accentSoft,
+      borderWidth: 1,
+      borderRadius: 999,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 92,
+    y: 47,
+    width: 112,
+    height: 16,
+    content: {
+      text: tagLabel,
+      fontSize: 12,
+      fontWeight: 600,
+      textAlign: 'left',
+      color: palette.primary,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.2,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'heading', {
+    x: 68,
+    y: 86,
+    width: 610,
+    height: 88,
+    content: {
+      text: normalized.title,
+      fontSize: isIntro ? 38 : 34,
+      fontWeight: 'bold',
+      textAlign: 'left',
+      color: palette.text,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.2,
+    },
+  })
+
+  if (normalized.subtitle) {
+    projectStore.addElement(projectId, slideId, 'text', {
+      x: 68,
+      y: 172,
+      width: 590,
+      height: 46,
+      content: {
+        text: normalized.subtitle,
+        fontSize: 19,
+        textAlign: 'left',
+        color: palette.muted,
+        fontFamily: 'Inter, sans-serif',
+        lineHeight: 1.45,
+      },
+    })
+  }
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 68,
+    y: bulletTop - 26,
+    width: 574,
+    height: cardHeight,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: palette.panel,
+      borderColor: '#dbeafe',
+      borderWidth: 1,
+      borderRadius: 22,
+    },
+  })
+
+  if (normalized.bullets.length) {
+    projectStore.addElement(projectId, slideId, 'text', {
+      x: 96,
+      y: bulletTop,
+      width: 520,
+      height: Math.max(cardHeight - 40, 120),
+      content: {
+        text: normalized.bullets.map(item => `• ${item}`).join('\n'),
+        fontSize: 18,
+        textAlign: 'left',
+        color: '#1e293b',
+        fontFamily: 'Inter, sans-serif',
+        lineHeight: 1.8,
+      },
+    })
+  }
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 676,
+    y: calloutTop,
+    width: 216,
+    height: isIntro ? 240 : 222,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: '#ffffff',
+      borderColor: palette.accentSoft,
+      borderWidth: 1,
+      borderRadius: 26,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 704,
+    y: calloutTop + 26,
+    width: 160,
+    height: 20,
+    content: {
+      text: isSummary ? 'Wrap-up' : 'Key takeaway',
+      fontSize: 12,
+      fontWeight: 700,
+      textAlign: 'left',
+      color: palette.primary,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.2,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 704,
+    y: calloutTop + 62,
+    width: 162,
+    height: 120,
+    content: {
+      text: normalized.callout || `Use this slide to anchor discussion around ${aiTopic.value || 'the topic'}.`,
+      fontSize: 18,
+      fontWeight: 600,
+      textAlign: 'left',
+      color: palette.text,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.55,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 704,
+    y: calloutTop + 176,
+    width: 110,
+    height: 2,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: palette.primary,
+      borderColor: 'transparent',
+      borderWidth: 0,
+      borderRadius: 8,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 68,
+    y: 488,
+    width: 280,
+    height: 20,
+    content: {
+      text: `Generated from: ${aiTopic.value}`,
+      fontSize: 12,
+      textAlign: 'left',
+      color: '#64748b',
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.3,
+    },
+  })
+}
+
+function buildQuizSlide(projectId, slideId, question, index = 0, total = 1) {
+  const palette = aiPalette('quiz')
+  const title = String(question?.question || `Question ${index + 1}`).trim()
+  const explanation = String(question?.explanation || '').trim()
+  const questionType = question?.type === 'true-false' ? 'True / False' : 'Multiple choice'
+
+  projectStore.updateSlide(projectId, slideId, {
+    title: `Question ${index + 1}`,
+    notes: explanation,
+    order: index,
+    backgroundType: 'gradient',
+    backgroundGradient: palette.gradient,
+    background: palette.surface,
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 70,
+    y: 34,
+    width: 820,
+    height: 472,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: '#ffffff',
+      borderColor: '#f3e8ff',
+      borderWidth: 1,
+      borderRadius: 28,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 70,
+    y: 34,
+    width: 820,
+    height: 76,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: '#faf5ff',
+      borderColor: 'transparent',
+      borderWidth: 0,
+      borderRadius: 28,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 92,
+    y: 56,
+    width: 118,
+    height: 26,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: '#ffffff',
+      borderColor: '#ddd6fe',
+      borderWidth: 1,
+      borderRadius: 999,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 114,
+    y: 62,
+    width: 90,
+    height: 14,
+    content: {
+      text: `${questionType}`,
+      fontSize: 11,
+      fontWeight: 700,
+      textAlign: 'left',
+      color: palette.primary,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.2,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 736,
+    y: 60,
+    width: 116,
+    height: 18,
+    content: {
+      text: `${index + 1} / ${total}`,
+      fontSize: 16,
+      fontWeight: 700,
+      textAlign: 'right',
+      color: palette.primary,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.2,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'heading', {
+    x: 92,
+    y: 124,
+    width: 708,
+    height: 56,
+    content: {
+      text: title,
+      fontSize: 29,
+      fontWeight: 'bold',
+      textAlign: 'left',
+      color: palette.text,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.2,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 92,
+    y: 198,
+    width: 360,
+    height: 20,
+    content: {
+      text: `Choose the best answer for ${aiTopic.value}.`,
+      fontSize: 14,
+      fontWeight: 500,
+      textAlign: 'left',
+      color: palette.muted,
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.35,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'quiz', {
+    x: 92,
+    y: 238,
+    width: 776,
+    height: 188,
+    content: {
+      question: title,
+      options: Array.isArray(question?.options) ? question.options : [],
+      correctIndex: typeof question?.correctIndex === 'number' ? question.correctIndex : 0,
+      explanation,
+      cardBgColor: '#ffffff',
+      questionColor: palette.text,
+      accentColor: palette.primary,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'shape', {
+    x: 92,
+    y: 444,
+    width: 776,
+    height: 42,
+    content: {
+      shapeType: 'rectangle',
+      fillColor: '#fff7ed',
+      borderColor: '#fde68a',
+      borderWidth: 1,
+      borderRadius: 14,
+    },
+  })
+
+  projectStore.addElement(projectId, slideId, 'text', {
+    x: 112,
+    y: 456,
+    width: 736,
+    height: 18,
+    content: {
+      text: explanation || 'Add your facilitator explanation here after reviewing the AI-generated answer choices.',
+      fontSize: 14,
+      textAlign: 'left',
+      color: '#92400e',
+      fontFamily: 'Inter, sans-serif',
+      lineHeight: 1.4,
+    },
+  })
+}
+
+async function createAIProject() {
+  if (!aiTopic.value.trim()) {
+    aiCreationError.value = 'Add a topic so the AI has something concrete to generate.'
+    return
+  }
+
+  aiSubmitting.value = true
+  aiCreationError.value = ''
+
+  try {
+    const projectName = aiProjectName.value.trim() || aiProjectNamePlaceholder.value
+
+    if (aiMode.value === 'quiz') {
+      const questions = await aiStore.generateQuiz(aiTopic.value, aiQuestionCount.value, {
+        difficulty: aiDifficulty.value,
+        questionType: aiQuestionType.value,
+        objective: aiContext.value,
+      })
+
+      if (!Array.isArray(questions) || !questions.length) {
+        throw new Error(aiStore.lastError || 'No quiz content was generated.')
+      }
+
+      const project = projectStore.createProject(projectName)
+      projectStore.updateProject(project.id, {
+        description: aiContext.value || `AI-generated quiz about ${aiTopic.value}`,
+        tags: ['ai', 'quiz'],
+        theme: {
+          ...project.theme,
+          primaryColor: '#5b21b6',
+          secondaryColor: '#f59e0b',
+          bgColor: '#fffaf0',
+          textColor: '#111827',
+        },
+      })
+
+      questions.forEach((question, index) => {
+        const targetSlide = index === 0 ? project.slides[0] : projectStore.addSlide(project.id)
+        if (!targetSlide) return
+        buildQuizSlide(project.id, targetSlide.id, question, index, questions.length)
+      })
+
+      showAIModal.value = false
+      openProject(project.id)
+      return
+    }
+
+    const deck = await aiStore.generateSlideDeck(aiTopic.value, aiSlideCount.value, {
+      objective: aiContext.value,
+    })
+
+    if (!Array.isArray(deck) || !deck.length) {
+      throw new Error(aiStore.lastError || 'No slide content was generated.')
+    }
+
+    const project = projectStore.createProject(projectName)
+    projectStore.updateProject(project.id, {
+      description: aiContext.value || `AI-generated slide deck about ${aiTopic.value}`,
+      tags: ['ai', 'slides'],
+      theme: {
+        ...project.theme,
+        primaryColor: '#2563eb',
+        secondaryColor: '#14b8a6',
+        bgColor: '#f8fbff',
+        textColor: '#0f172a',
+      },
+    })
+
+    deck.forEach((slideContent, index) => {
+      const targetSlide = index === 0 ? project.slides[0] : projectStore.addSlide(project.id)
+      if (!targetSlide) return
+      buildSlideFromGeneratedContent(project.id, targetSlide.id, slideContent, index)
+    })
+
+    showAIModal.value = false
+    openProject(project.id)
+  } catch (error) {
+    console.error('AI project creation failed', error)
+    aiCreationError.value = error?.message || 'The AI flow failed. Please try again.'
+  } finally {
+    aiSubmitting.value = false
+  }
 }
 
 function deleteProject(id) {
@@ -356,7 +934,7 @@ function setRailSection(section) {
             <button class="chip-g" :class="activeCategory === 'all' && 'active'" @click="activeCategory = 'all'" type="button">All</button>
             <button v-for="item in categories" :key="item.value" class="chip-g" :class="activeCategory === item.value && 'active'" @click="activeCategory = item.value" type="button">{{ item.label }}</button>
           </div>
-          <button class="btn g-outline-btn ai-btn-g">
+          <button class="btn g-outline-btn ai-btn-g" type="button" @click="openAICreationModal('quiz')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
             Create quiz with AI
           </button>
@@ -460,6 +1038,7 @@ function setRailSection(section) {
               </h2>
               <div class="quick-actions">
                 <button class="quick-btn" @click="openNewModal" data-tooltip="Start with a blank project"><span class="q-icon" style="color:var(--color-primary);">+</span> Create scratch project</button>
+                <button class="quick-btn quick-btn-ai" @click="openAICreationModal('quiz')" data-tooltip="Generate a project with AI"><span class="q-icon" style="color:#7c3aed;">✦</span> Create with AI</button>
                 <button class="quick-btn" @click="setRailSection('templates')" data-tooltip="Use a game template"><span class="q-icon" style="color:var(--color-secondary);">🎮</span> Create a game</button>
                 <button class="quick-btn" @click="setRailSection('templates')" data-tooltip="Use a presentation template"><span class="q-icon" style="color:var(--color-success);">📱</span> Create a presentation</button>
               </div>
@@ -610,6 +1189,104 @@ function setRailSection(section) {
       </template>
     </Modal>
 
+    <Modal v-if="showAIModal" title="Create with AI" size="lg" @close="showAIModal = false">
+      <div class="ai-create-shell">
+        <div class="ai-mode-grid">
+          <button class="ai-mode-card" :class="aiMode === 'quiz' && 'active'" type="button" @click="aiMode = 'quiz'">
+            <strong>Quiz project</strong>
+            <span>Generate question slides learners can answer right away.</span>
+          </button>
+          <button class="ai-mode-card" :class="aiMode === 'deck' && 'active'" type="button" @click="aiMode = 'deck'">
+            <strong>Slide deck</strong>
+            <span>Create a structured lesson deck from a topic and learning goal.</span>
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Topic</label>
+          <input
+            id="ai-topic-input"
+            v-model="aiTopic"
+            class="input"
+            placeholder="e.g. Cybersecurity basics for new employees"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Project name</label>
+          <input
+            v-model="aiProjectName"
+            class="input"
+            :placeholder="aiProjectNamePlaceholder"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Goal or context</label>
+          <textarea
+            v-model="aiContext"
+            class="textarea ai-create-textarea"
+            placeholder="Explain the audience, learning objective, tone, or any constraints you want the AI to follow."
+          />
+        </div>
+
+        <div class="ai-config-grid">
+          <div class="form-group" v-if="aiMode === 'deck'">
+            <label class="form-label">Slides</label>
+            <select v-model="aiSlideCount" class="ai-select">
+              <option :value="3">3</option>
+              <option :value="5">5</option>
+              <option :value="7">7</option>
+              <option :value="10">10</option>
+            </select>
+          </div>
+
+          <template v-else>
+            <div class="form-group">
+              <label class="form-label">Questions</label>
+              <select v-model="aiQuestionCount" class="ai-select">
+                <option :value="3">3</option>
+                <option :value="5">5</option>
+                <option :value="8">8</option>
+                <option :value="10">10</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Difficulty</label>
+              <select v-model="aiDifficulty" class="ai-select">
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Question type</label>
+              <select v-model="aiQuestionType" class="ai-select">
+                <option value="multiple-choice">Multiple choice</option>
+                <option value="true-false">True / False</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </div>
+          </template>
+        </div>
+
+        <p class="ai-create-note">
+          {{ aiStore.apiKey ? 'Using your configured AI provider.' : 'No API key configured yet. The built-in sample generator will still create starter content.' }}
+        </p>
+
+        <p v-if="aiCreationError" class="error-msg">{{ aiCreationError }}</p>
+      </div>
+
+      <template #footer>
+        <button class="btn btn-secondary" @click="showAIModal = false">Cancel</button>
+        <button class="btn btn-primary" :disabled="aiSubmitting || aiStore.isGenerating" @click="createAIProject">
+          {{ aiPrimaryActionLabel }}
+        </button>
+      </template>
+    </Modal>
+
     <Modal v-if="confirmDeleteId" title="Delete Project" size="sm" @close="confirmDeleteId = null">
       <p class="delete-text">Are you sure you want to delete this project? This action cannot be undone.</p>
       <template #footer>
@@ -689,6 +1366,89 @@ function setRailSection(section) {
 .auth-provider-btn:hover {
   border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface-raised));
+}
+
+.ai-create-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.ai-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ai-mode-card {
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: #ffffff;
+  color: var(--color-text);
+  padding: 16px;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.ai-mode-card strong {
+  font-size: 16px;
+}
+
+.ai-mode-card span {
+  color: var(--color-text-muted);
+  line-height: 1.45;
+  font-size: 14px;
+}
+
+.ai-mode-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+}
+
+.ai-mode-card.active {
+  border-color: #6c47ff;
+  background: linear-gradient(180deg, rgba(245, 243, 255, 0.92), rgba(238, 242, 255, 0.92));
+  box-shadow: 0 18px 34px rgba(108, 71, 255, 0.12);
+}
+
+.ai-config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ai-select {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: #ffffff;
+  color: var(--color-text);
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.ai-create-textarea {
+  min-height: 120px;
+}
+
+.ai-create-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.quick-btn-ai {
+  border-color: rgba(124, 58, 237, 0.24);
+  background: linear-gradient(135deg, rgba(245, 243, 255, 0.95), rgba(238, 242, 255, 0.95));
+  box-shadow: 0 10px 24px rgba(124, 58, 237, 0.08);
+}
+
+.quick-btn-ai:hover {
+  border-color: rgba(124, 58, 237, 0.4);
+  box-shadow: 0 14px 28px rgba(124, 58, 237, 0.12);
 }
 
 .provider-name {
@@ -1253,9 +2013,18 @@ function setRailSection(section) {
     padding-left: var(--space-4);
     padding-right: var(--space-4);
   }
+
+  .ai-config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
+  .ai-mode-grid,
+  .ai-config-grid {
+    grid-template-columns: 1fr;
+  }
+
   .cards-row,
   .project-grid {
     grid-template-columns: 1fr;
