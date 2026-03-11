@@ -83,14 +83,14 @@ const categories = [
 ]
 
 const marketplaceCards = [
-  { id: 'microcourse', title: 'Microcourse: AI in Education', subtitle: 'Interactive lesson', category: 'presentations', section: 'Teach classes', style: 'bg-a' },
-  { id: 'chromatic', title: 'Chromatic', subtitle: 'Presentation', category: 'presentations', section: 'Teach classes', style: 'bg-b' },
-  { id: 'branching', title: 'Branching Scenario', subtitle: 'Scenario practice', category: 'games', section: 'Teach classes', style: 'bg-c' },
-  { id: 'flipcards', title: 'Flipcards Museum', subtitle: 'Game challenge', category: 'games', section: 'Teach classes', style: 'bg-d' },
-  { id: 'higher-ed', title: 'Higher Education', subtitle: 'Presentation', category: 'presentations', section: 'Boost power skills', style: 'bg-e' },
-  { id: 'complete', title: 'Complete the sentence', subtitle: 'Quiz', category: 'quizzes', section: 'Boost power skills', style: 'bg-f' },
-  { id: 'fill-blanks', title: 'Fill in the blanks', subtitle: 'Quiz assessment', category: 'quizzes', section: 'Boost power skills', style: 'bg-g' },
-  { id: 'timeline', title: 'Data Viz Timeline', subtitle: 'Interactive infographic', category: 'more', section: 'Boost power skills', style: 'bg-h' },
+  { id: 'microcourse', title: 'Microcourse: AI in Education', subtitle: 'Interactive lesson', category: 'presentations', section: 'Teach classes', style: 'bg-a', preview: 'lesson' },
+  { id: 'chromatic', title: 'Chromatic', subtitle: 'Presentation', category: 'presentations', section: 'Teach classes', style: 'bg-b', preview: 'presentation' },
+  { id: 'branching', title: 'Branching Scenario', subtitle: 'Scenario practice', category: 'games', section: 'Teach classes', style: 'bg-c', preview: 'branching' },
+  { id: 'flipcards', title: 'Flipcards Museum', subtitle: 'Game challenge', category: 'games', section: 'Teach classes', style: 'bg-d', preview: 'cards' },
+  { id: 'higher-ed', title: 'Higher Education', subtitle: 'Presentation', category: 'presentations', section: 'Boost power skills', style: 'bg-e', preview: 'spotlight' },
+  { id: 'complete', title: 'Complete the sentence', subtitle: 'Quiz', category: 'quizzes', section: 'Boost power skills', style: 'bg-f', preview: 'quiz' },
+  { id: 'fill-blanks', title: 'Fill in the blanks', subtitle: 'Quiz assessment', category: 'quizzes', section: 'Boost power skills', style: 'bg-g', preview: 'assessment' },
+  { id: 'timeline', title: 'Data Viz Timeline', subtitle: 'Interactive infographic', category: 'more', section: 'Boost power skills', style: 'bg-h', preview: 'timeline' },
 ]
 
 const filteredMarketplace = computed(() => {
@@ -485,10 +485,13 @@ function setRailSection(section) {
           <h2 class="section-title">{{ section.title }}</h2>
           <div class="cards-row">
             <article v-for="card in section.cards" :key="card.id" class="market-card" :class="card.style" @click="createFromTemplate(card)">
+              <div class="template-wireframe" :class="`preview-${card.preview}`" aria-hidden="true"></div>
               <div class="hover-overlay"></div>
-              <div class="action-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></div>
-              <span class="card-type">{{ card.subtitle }}</span>
-              <h3 class="card-title">{{ card.title }}</h3>
+              <div class="action-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></div>
+              <div class="card-copy">
+                <span class="card-type">{{ card.subtitle }}</span>
+                <h3 class="card-title">{{ card.title }}</h3>
+              </div>
             </article>
           </div>
         </section>
@@ -1024,15 +1027,16 @@ function setRailSection(section) {
 
 .market-card {
   position: relative;
-  min-height: 180px;
+  min-height: 210px;
   border-radius: var(--radius-xl);
-  padding: 20px;
+  padding: 16px;
   cursor: pointer;
   color: #fff;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
@@ -1040,58 +1044,38 @@ function setRailSection(section) {
 .market-card::before {
   content: '';
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%) scale(0.8);
-  width: 44px; height: 44px;
-  background: rgba(255,255,255,0.9);
-  border-radius: 50%;
-  opacity: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 10;
-  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>') no-repeat center / 20px;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 34%, rgba(2,6,23,0.08) 100%);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .market-card::after {
   content: '';
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%) scale(0.8);
-  width: 44px; height: 44px;
-  background: white;
-  border-radius: 50%;
-  opacity: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 9;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 92px;
+  background: linear-gradient(180deg, rgba(8,15,34,0) 0%, rgba(8,15,34,0.52) 38%, rgba(8,15,34,0.82) 100%);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .market-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+  transform: translateY(-6px);
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.18);
 }
 
-.market-card:hover::before, .market-card:hover::after {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-}
-
-.market-card:hover .card-title, .market-card:hover .card-type {
-  transform: translateY(4px);
-  opacity: 0.9;
-}
-
-.market-card::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 60%);
-  z-index: 1;
+.market-card:hover .card-copy {
+  transform: translateY(-2px);
 }
 
 .market-card .hover-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.3);
-  z-index: 2;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(15,23,42,0.16));
+  z-index: 3;
   opacity: 0;
   transition: opacity 0.3s ease;
 }
@@ -1100,16 +1084,43 @@ function setRailSection(section) {
   opacity: 1;
 }
 
+.template-wireframe {
+  position: absolute;
+  inset: 16px 16px 70px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.24);
+  background-color: rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
+  opacity: 0.96;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, background-color 0.3s ease;
+  z-index: 1;
+}
+
+.template-wireframe::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255,255,255,0.22);
+  opacity: 0.65;
+}
+
+.market-card:hover .template-wireframe {
+  transform: translateY(-3px) scale(1.01);
+  background-color: rgba(255,255,255,0.16);
+}
+
 .market-card .action-icon {
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%) scale(0.8);
-  width: 44px; height: 44px;
+  top: 16px;
+  right: 16px;
+  transform: translateY(-8px) scale(0.9);
+  width: 38px; height: 38px;
   background: rgba(255,255,255,1);
   border-radius: 50%;
   opacity: 0;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 10;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1119,29 +1130,127 @@ function setRailSection(section) {
 
 .market-card:hover .action-icon {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+  transform: translateY(0) scale(1);
+}
+
+.card-copy {
+  position: relative;
+  z-index: 4;
+  padding: 14px 14px 2px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(6,10,24,0.04), rgba(6,10,24,0.2));
+  backdrop-filter: blur(8px);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card-type,
 .card-title {
-  position: relative;
-  z-index: 3;
   text-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .card-type {
-  font-size: 13px;
-  opacity: 0.9;
-  font-weight: 500;
+  display: inline-block;
+  font-size: 11px;
+  opacity: 0.92;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.14);
 }
 
 .card-title {
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1.2;
-  margin-top: 6px;
+  margin-top: 10px;
   font-weight: 700;
+}
+
+.preview-lesson {
+  background:
+    linear-gradient(rgba(255,255,255,0.92), rgba(255,255,255,0.92)) 16px 16px / calc(100% - 32px) 38px no-repeat,
+    linear-gradient(rgba(255,255,255,0.46), rgba(255,255,255,0.46)) 16px 66px / 54% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.34), rgba(255,255,255,0.34)) 16px 82px / 68% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)) 16px 102px / calc(100% - 32px) 42px no-repeat,
+    linear-gradient(rgba(255,255,255,0.26), rgba(255,255,255,0.26)) calc(100% - 94px) 66px / 78px 54px no-repeat,
+    linear-gradient(rgba(255,255,255,0.28), rgba(255,255,255,0.28)) 16px calc(100% - 28px) / 120px 8px no-repeat;
+}
+
+.preview-presentation {
+  background:
+    linear-gradient(rgba(255,255,255,0.9), rgba(255,255,255,0.9)) 16px 16px / calc(100% - 32px) 12px no-repeat,
+    linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)) 16px 38px / calc(100% - 32px) 78px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) 28px 54px / 34% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.3)) 28px 72px / 48% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.24), rgba(255,255,255,0.24)) calc(100% - 94px) 50px / 64px 54px no-repeat,
+    linear-gradient(rgba(255,255,255,0.28), rgba(255,255,255,0.28)) 16px calc(100% - 26px) / 96px 8px no-repeat;
+}
+
+.preview-branching {
+  background:
+    radial-gradient(circle, rgba(255,255,255,0.9) 0 11px, transparent 12px) center 30px / 24px 24px no-repeat,
+    linear-gradient(rgba(255,255,255,0.26), rgba(255,255,255,0.26)) center 50px / 2px 24px no-repeat,
+    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.3)) center 72px / 120px 2px no-repeat,
+    linear-gradient(rgba(255,255,255,0.22), rgba(255,255,255,0.22)) 22px 84px / 74px 42px no-repeat,
+    linear-gradient(rgba(255,255,255,0.22), rgba(255,255,255,0.22)) calc(100% - 96px) 84px / 74px 42px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) 34px 98px / 42px 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) calc(100% - 74px) 98px / 42px 8px no-repeat;
+}
+
+.preview-cards {
+  background:
+    linear-gradient(12deg, rgba(255,255,255,0.18), rgba(255,255,255,0.18)) 22px 24px / 72px 96px no-repeat,
+    linear-gradient(12deg, rgba(255,255,255,0.16), rgba(255,255,255,0.16)) calc(50% - 36px) 18px / 72px 96px no-repeat,
+    linear-gradient(12deg, rgba(255,255,255,0.14), rgba(255,255,255,0.14)) calc(100% - 94px) 24px / 72px 96px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) 34px 102px / 48px 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) calc(50% - 24px) 96px / 48px 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) calc(100% - 82px) 102px / 48px 8px no-repeat;
+}
+
+.preview-spotlight {
+  background:
+    linear-gradient(rgba(255,255,255,0.92), rgba(255,255,255,0.92)) 16px 16px / calc(100% - 32px) 14px no-repeat,
+    linear-gradient(rgba(255,255,255,0.22), rgba(255,255,255,0.22)) 16px 42px / 42% 84px no-repeat,
+    linear-gradient(rgba(255,255,255,0.46), rgba(255,255,255,0.46)) calc(48% + 10px) 52px / 30% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.34), rgba(255,255,255,0.34)) calc(48% + 10px) 70px / 36% 8px no-repeat,
+    linear-gradient(rgba(255,255,255,0.24), rgba(255,255,255,0.24)) calc(48% + 10px) 90px / 40% 30px no-repeat,
+    linear-gradient(rgba(255,255,255,0.28), rgba(255,255,255,0.28)) 16px calc(100% - 24px) / 110px 8px no-repeat;
+}
+
+.preview-quiz {
+  background:
+    linear-gradient(rgba(255,255,255,0.92), rgba(255,255,255,0.92)) 16px 16px / 56% 12px no-repeat,
+    linear-gradient(rgba(255,255,255,0.42), rgba(255,255,255,0.42)) 16px 44px / calc(100% - 32px) 10px no-repeat,
+    linear-gradient(rgba(255,255,255,0.24), rgba(255,255,255,0.24)) 16px 66px / calc(100% - 32px) 24px no-repeat,
+    linear-gradient(rgba(255,255,255,0.24), rgba(255,255,255,0.24)) 16px 98px / calc(100% - 32px) 24px no-repeat,
+    radial-gradient(circle, rgba(255,255,255,0.8) 0 5px, transparent 6px) 28px 74px / 10px 10px no-repeat,
+    radial-gradient(circle, rgba(255,255,255,0.8) 0 5px, transparent 6px) 28px 106px / 10px 10px no-repeat,
+    linear-gradient(rgba(255,255,255,0.22), rgba(255,255,255,0.22)) calc(100% - 88px) calc(100% - 24px) / 72px 10px no-repeat;
+}
+
+.preview-assessment {
+  background:
+    linear-gradient(rgba(255,255,255,0.9), rgba(255,255,255,0.9)) 16px 16px / 62% 12px no-repeat,
+    linear-gradient(rgba(255,255,255,0.32), rgba(255,255,255,0.32)) 16px 46px / 54px 40px no-repeat,
+    linear-gradient(rgba(255,255,255,0.32), rgba(255,255,255,0.32)) 82px 46px / 54px 40px no-repeat,
+    linear-gradient(rgba(255,255,255,0.32), rgba(255,255,255,0.32)) 148px 46px / 54px 40px no-repeat,
+    linear-gradient(rgba(255,255,255,0.44), rgba(255,255,255,0.44)) 16px 98px / calc(100% - 32px) 9px no-repeat,
+    linear-gradient(rgba(255,255,255,0.24), rgba(255,255,255,0.24)) 16px 118px / calc(100% - 32px) 16px no-repeat,
+    linear-gradient(rgba(255,255,255,0.22), rgba(255,255,255,0.22)) calc(100% - 84px) calc(100% - 24px) / 68px 10px no-repeat;
+}
+
+.preview-timeline {
+  background:
+    linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.88)) 16px 18px / 44% 12px no-repeat,
+    linear-gradient(rgba(255,255,255,0.26), rgba(255,255,255,0.26)) 20px 74px / calc(100% - 40px) 3px no-repeat,
+    radial-gradient(circle, rgba(255,255,255,0.86) 0 7px, transparent 8px) 32px 66px / 16px 16px no-repeat,
+    radial-gradient(circle, rgba(255,255,255,0.86) 0 7px, transparent 8px) calc(50% - 8px) 66px / 16px 16px no-repeat,
+    radial-gradient(circle, rgba(255,255,255,0.86) 0 7px, transparent 8px) calc(100% - 48px) 66px / 16px 16px no-repeat,
+    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.3)) 18px 96px / 64px 24px no-repeat,
+    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.3)) calc(50% - 32px) 96px / 64px 24px no-repeat,
+    linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.3)) calc(100% - 82px) 96px / 64px 24px no-repeat;
 }
 
 .bg-a { background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%); }
