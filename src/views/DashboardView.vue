@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import { useAuthStore } from '@/stores/authStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useEditorStore } from '@/stores/editorStore'
@@ -391,6 +393,70 @@ function setRailSection(section) {
     document.getElementById('home-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 }
+
+function startDashboardWalkthrough() {
+  const driverObj = driver({
+    showProgress: true,
+    animate: true,
+    allowClose: true,
+    overlayColor: 'rgba(15, 23, 42, 0.6)',
+    popoverClass: 'app-walkthrough-theme',
+    steps: [
+      {
+        popover: {
+          title: 'Welcome to your Dashboard! 👋',
+          description: 'This is where you manage all your presentations, games, and quizzes. Let\'s quickly show you around.',
+        }
+      },
+      {
+        element: '.left-rail',
+        popover: {
+          title: 'Navigation',
+          description: 'Quickly switch back and forth between your home, your content, and browsing fresh templates.',
+          side: 'right',
+          align: 'start'
+        }
+      },
+      {
+        element: '.quick-actions',
+        popover: {
+          title: 'Fast Magic ✨',
+          description: 'Use these shortcuts to start a project from scratch, use an AI wizard, or pick a beautiful template right away.',
+          side: 'top',
+          align: 'center'
+        }
+      },
+      {
+        element: '.nav-search-bar',
+        popover: {
+          title: 'Find everything',
+          description: 'Search across your projects and millions of templates instantly from the top bar.',
+          side: 'bottom',
+          align: 'start'
+        }
+      }
+    ],
+    onDestroyed: () => {
+      localStorage.setItem('hasSeenDashboardWalkthrough', 'true')
+    }
+  })
+
+  // Ensure we are on the Home rail to show off the right parts
+  if (activeRail.value !== 'home') {
+    setRailSection('home')
+    setTimeout(() => driverObj.drive(), 300)
+  } else {
+    driverObj.drive()
+  }
+}
+
+onMounted(() => {
+  if (!localStorage.getItem('hasSeenDashboardWalkthrough')) {
+    setTimeout(() => {
+      startDashboardWalkthrough()
+    }, 800)
+  }
+})
 </script>
 
 <template>
@@ -505,6 +571,10 @@ function setRailSection(section) {
             <input v-model="searchQuery" placeholder="Search templates and creations" />
           </div>
           <div class="nav-actions">
+            <button class="btn btn-ghost btn-sm" @click="startDashboardWalkthrough" data-tooltip="Show Tour">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Help
+            </button>
             <button class="btn btn-secondary btn-sm" style="color:#d97706;border-color:rgba(217,119,6,0.3);background:#fffbeb;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> Upgrade to Premium
             </button>

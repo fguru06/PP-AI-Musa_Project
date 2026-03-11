@@ -1,6 +1,8 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -307,6 +309,64 @@ function isAuthoringOptionActive(id) {
   if (id === 'pages') return editorStore.showSlidePanel
   return false
 }
+
+function startWalkthrough() {
+  const driverObj = driver({
+    showProgress: true,
+    animate: true,
+    overlayColor: 'rgba(15, 23, 42, 0.65)',
+    popoverClass: 'app-walkthrough-theme',
+    steps: [
+      {
+        popover: {
+          title: 'Welcome to the Editor! 🎨',
+          description: 'This is where the magic happens. Let us take a quick tour so you know where everything is.',
+        }
+      },
+      {
+        element: '#tour-export-btn',
+        popover: {
+          title: 'Export Your Project',
+          description: 'When you are finished creating, hit Export to publish your work and share it with the world.',
+          side: 'bottom',
+          align: 'end'
+        }
+      },
+      {
+        element: '.authoring-rail',
+        popover: {
+          title: 'Authoring Tools',
+          description: 'Drag and drop text, interactive hotspots, quizzes, and multimedia directly onto your canvas.',
+          side: 'right',
+          align: 'start'
+        }
+      },
+      {
+        element: '.topbar-center',
+        popover: {
+          title: 'Slide Navigation',
+          description: 'Keep track of exactly which slide you are editing. You can add more from the Pages tab later.',
+          side: 'bottom',
+          align: 'center'
+        }
+      }
+    ],
+    onDestroyed: () => {
+      localStorage.setItem('hasSeenWalkthrough', 'true')
+    }
+  })
+
+  driverObj.drive()
+}
+
+// Watch for the project to load before starting the walkthrough
+watch(() => project.value, (newVal) => {
+  if (newVal && !localStorage.getItem('hasSeenWalkthrough')) {
+    setTimeout(() => {
+      startWalkthrough()
+    }, 100) // Small delay to guarantee elements are in the DOM
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -341,6 +401,10 @@ function isAuthoringOptionActive(id) {
         </span>
       </div>
       <div class="topbar-right">
+        <button class="btn btn-ghost btn-sm" @click="startWalkthrough" data-tooltip="Show Help" data-tooltip-position="bottom">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Help
+        </button>
         <button
           :class="['btn btn-ghost btn-sm', editorStore.showAIPanel && 'active-btn']"
           @click="editorStore.showAIPanel = !editorStore.showAIPanel; editorStore.setRightPanel('ai')"
@@ -358,7 +422,7 @@ function isAuthoringOptionActive(id) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           Preview
         </button>
-        <button class="btn btn-primary btn-sm" @click="editorStore.showExportModal = true" data-tooltip="Export or publish" data-tooltip-position="bottom">
+        <button id="tour-export-btn" class="btn btn-primary btn-sm" @click="editorStore.showExportModal = true" data-tooltip="Export or publish" data-tooltip-position="bottom">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Export
         </button>
