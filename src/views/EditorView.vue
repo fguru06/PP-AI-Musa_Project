@@ -301,7 +301,7 @@ function isAuthoringOptionActive(id) {
   if (id === 'resources') return editorStore.activeTool === 'image'
   if (id === 'interactive-elements') return ['hotspot', 'button'].includes(editorStore.activeTool)
   if (id === 'interactive-questions') return editorStore.activeTool === 'quiz'
-  if (id === 'widgets') return ['shape', 'video', 'audio'].includes(editorStore.activeTool)
+  if (id === 'widgets') return ['shape', 'video', 'audio', 'chart'].includes(editorStore.activeTool)
   if (id === 'insert') return false
   if (id === 'style' || id === 'background') return editorStore.rightPanelTab === 'properties'
   if (id === 'pages') return editorStore.showSlidePanel

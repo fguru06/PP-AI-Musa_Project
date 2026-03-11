@@ -20,6 +20,7 @@ const ELEMENT_TOOLS = [
   { id: 'video', label: 'Video', tooltip: 'Embed video', icon: 'video' },
   { id: 'audio', label: 'Audio', tooltip: 'Embed audio', icon: 'audio' },
   { id: 'quiz', label: 'Quiz', tooltip: 'Add quiz', icon: 'quiz' },
+  { id: 'chart', label: 'Chart', tooltip: 'Add chart', icon: 'chart' },
 ]
 
 const SHAPES = [
@@ -114,6 +115,12 @@ function setTool(id) {
         <template v-else-if="tool.icon === 'quiz'">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+        </template>
+        <!-- Chart -->
+        <template v-else-if="tool.icon === 'chart'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19h16"/><path d="M7 16V9"/><path d="M12 16V5"/><path d="M17 16v-4"/>
           </svg>
         </template>
         <span class="tool-label">{{ tool.label }}</span>

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset } from '@/lib/canvas'
+import ChartElement from '@/components/editor/elements/ChartElement.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -424,6 +425,8 @@ function toggleHotspot(elId) {
                 />
               </svg>
             </div>
+
+            <ChartElement v-else-if="el.type === 'chart'" :element="el" :theme="project?.theme || {}" />
 
             <!-- Button -->
             <div v-else-if="el.type === 'button'" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">

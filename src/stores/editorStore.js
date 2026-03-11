@@ -9,7 +9,7 @@ export const useEditorStore = defineStore('editor', () => {
   const hoveredElementId = ref(null)
 
   // Tool state
-  const activeTool = ref('select') // 'select' | 'text' | 'heading' | 'image' | 'shape' | 'button' | 'hotspot' | 'video' | 'audio' | 'quiz'
+  const activeTool = ref('select') // 'select' | 'text' | 'heading' | 'image' | 'shape' | 'button' | 'hotspot' | 'video' | 'audio' | 'quiz' | 'chart'
   const activeShape = ref('rectangle') // for shape tool
   const rightPanelTab = ref('properties') // 'properties' | 'layers' | 'ai' | 'theme'
   const leftPanelTab = ref('slides') // 'slides'

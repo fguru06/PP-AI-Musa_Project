@@ -6,6 +6,7 @@ import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
 import { getProjectCanvasSize } from '@/lib/canvas'
+import { buildChartModel } from '@/lib/chart'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
@@ -181,10 +182,88 @@ body {
   overflow: hidden;
 }
 .lf-button-wrap,
+.lf-chart-wrap,
 .lf-divider-wrap,
 .lf-audio-wrap {
   width: 100%;
   height: 100%;
+}
+.lf-chart-wrap {
+  border-radius: 16px;
+  overflow: hidden;
+}
+.lf-chart {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+}
+.lf-chart-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.lf-chart-svg {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+.lf-chart-axis,
+.lf-chart-value,
+.lf-chart-center-label,
+.lf-chart-center-value {
+  font-family: inherit;
+}
+.lf-chart-axis {
+  font-size: 10px;
+  opacity: .78;
+}
+.lf-chart-value {
+  font-size: 10px;
+  font-weight: 700;
+}
+.lf-chart-center-value {
+  font-size: 18px;
+  font-weight: 800;
+}
+.lf-chart-center-label {
+  font-size: 10px;
+  opacity: .72;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.lf-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+.lf-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10px;
+}
+.lf-chart-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+.lf-chart-legend-label {
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .82;
+}
+.lf-chart-legend-value {
+  font-weight: 700;
 }
 .lf-button {
   width: 100%;
@@ -897,6 +976,8 @@ function buildRuntimeJS() {
       wrapper.appendChild(renderVideo(content));
     } else if (el.type === 'audio') {
       wrapper.appendChild(renderAudio(content));
+    } else if (el.type === 'chart') {
+      wrapper.appendChild(renderChart(el));
     } else if (el.type === 'quiz') {
       wrapper.appendChild(renderQuiz(content));
     } else if (el.type === 'divider') {
@@ -1138,6 +1219,199 @@ function buildRuntimeJS() {
     wrap.appendChild(icon);
     wrap.appendChild(label);
     wrap.appendChild(audio);
+    return wrap;
+  }
+
+  function renderChart(el) {
+    var model = buildChartModel(el.content || {}, el.width || 420, el.height || 280, project.theme || {});
+    var wrap = document.createElement('div');
+    wrap.className = 'lf-chart-wrap';
+
+    var root = document.createElement('div');
+    root.className = 'lf-chart';
+    root.style.background = model.backgroundColor;
+    root.style.color = model.textColor;
+    root.style.border = (model.borderWidth || 0) + 'px solid ' + (model.borderColor || '#e2e8f0');
+
+    if (model.title) {
+      var title = document.createElement('div');
+      title.className = 'lf-chart-title';
+      title.textContent = model.title;
+      root.appendChild(title);
+    }
+
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'lf-chart-svg');
+    svg.setAttribute('viewBox', '0 0 ' + (el.width || 420) + ' ' + (el.height || 280));
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    if (model.type === 'circle') {
+      model.circle.slices.forEach(function (slice) {
+        var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', slice.path);
+        path.setAttribute('fill', slice.color);
+        svg.appendChild(path);
+      });
+
+      var inner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      inner.setAttribute('cx', model.circle.center.x);
+      inner.setAttribute('cy', model.circle.center.y);
+      inner.setAttribute('r', Math.max(0, model.circle.innerRadius - 2));
+      inner.setAttribute('fill', model.backgroundColor);
+      svg.appendChild(inner);
+
+      var centerValue = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      centerValue.setAttribute('x', model.circle.center.x);
+      centerValue.setAttribute('y', model.circle.center.y - 4);
+      centerValue.setAttribute('text-anchor', 'middle');
+      centerValue.setAttribute('class', 'lf-chart-center-value');
+      centerValue.setAttribute('fill', model.textColor);
+      centerValue.textContent = model.circle.centerValue;
+      svg.appendChild(centerValue);
+
+      var centerLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      centerLabel.setAttribute('x', model.circle.center.x);
+      centerLabel.setAttribute('y', model.circle.center.y + 14);
+      centerLabel.setAttribute('text-anchor', 'middle');
+      centerLabel.setAttribute('class', 'lf-chart-center-label');
+      centerLabel.setAttribute('fill', model.textColor);
+      centerLabel.textContent = 'Total';
+      svg.appendChild(centerLabel);
+    } else {
+      if (model.showGrid) {
+        model.cartesian.ticks.forEach(function (tick) {
+          var grid = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          grid.setAttribute('x1', model.cartesian.padding.left);
+          grid.setAttribute('x2', model.cartesian.padding.left + model.cartesian.plotWidth);
+          grid.setAttribute('y1', tick.y);
+          grid.setAttribute('y2', tick.y);
+          grid.setAttribute('stroke', model.gridColor);
+          grid.setAttribute('stroke-width', '1');
+          svg.appendChild(grid);
+        });
+      }
+
+      model.cartesian.ticks.forEach(function (tick) {
+        var tickLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        tickLabel.setAttribute('x', model.cartesian.padding.left - 8);
+        tickLabel.setAttribute('y', tick.y + 4);
+        tickLabel.setAttribute('text-anchor', 'end');
+        tickLabel.setAttribute('class', 'lf-chart-axis');
+        tickLabel.setAttribute('fill', model.textColor);
+        tickLabel.textContent = tick.label;
+        svg.appendChild(tickLabel);
+      });
+
+      if (model.type === 'bar') {
+        model.cartesian.bars.forEach(function (bar) {
+          var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', bar.x);
+          rect.setAttribute('y', bar.y);
+          rect.setAttribute('width', bar.width);
+          rect.setAttribute('height', bar.height);
+          rect.setAttribute('fill', bar.color);
+          rect.setAttribute('rx', '8');
+          svg.appendChild(rect);
+
+          if (model.showValues) {
+            var valueLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            valueLabel.setAttribute('x', bar.x + (bar.width / 2));
+            valueLabel.setAttribute('y', bar.y - 8);
+            valueLabel.setAttribute('text-anchor', 'middle');
+            valueLabel.setAttribute('class', 'lf-chart-value');
+            valueLabel.setAttribute('fill', model.textColor);
+            valueLabel.textContent = bar.valueLabel;
+            svg.appendChild(valueLabel);
+          }
+
+          var barLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          barLabel.setAttribute('x', bar.x + (bar.width / 2));
+          barLabel.setAttribute('y', model.cartesian.padding.top + model.cartesian.plotHeight + 18);
+          barLabel.setAttribute('text-anchor', 'middle');
+          barLabel.setAttribute('class', 'lf-chart-axis');
+          barLabel.setAttribute('fill', model.textColor);
+          barLabel.textContent = bar.label;
+          svg.appendChild(barLabel);
+        });
+      } else {
+        if (model.showArea && model.cartesian.areaPath) {
+          var area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          area.setAttribute('d', model.cartesian.areaPath);
+          area.setAttribute('fill', (model.cartesian.points[0] && model.cartesian.points[0].color) || '#6c47ff');
+          area.setAttribute('opacity', '0.16');
+          svg.appendChild(area);
+        }
+
+        var line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        line.setAttribute('d', model.cartesian.linePath);
+        line.setAttribute('stroke', (model.cartesian.points[0] && model.cartesian.points[0].color) || '#6c47ff');
+        line.setAttribute('stroke-width', model.strokeWidth || 3);
+        line.setAttribute('fill', 'none');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(line);
+
+        model.cartesian.points.forEach(function (point) {
+          var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          dot.setAttribute('cx', point.x);
+          dot.setAttribute('cy', point.y);
+          dot.setAttribute('r', '4.5');
+          dot.setAttribute('fill', point.color);
+          svg.appendChild(dot);
+
+          if (model.showValues) {
+            var pointValue = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            pointValue.setAttribute('x', point.x);
+            pointValue.setAttribute('y', point.y - 10);
+            pointValue.setAttribute('text-anchor', 'middle');
+            pointValue.setAttribute('class', 'lf-chart-value');
+            pointValue.setAttribute('fill', model.textColor);
+            pointValue.textContent = point.valueLabel;
+            svg.appendChild(pointValue);
+          }
+
+          var pointLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          pointLabel.setAttribute('x', point.x);
+          pointLabel.setAttribute('y', model.cartesian.padding.top + model.cartesian.plotHeight + 18);
+          pointLabel.setAttribute('text-anchor', 'middle');
+          pointLabel.setAttribute('class', 'lf-chart-axis');
+          pointLabel.setAttribute('fill', model.textColor);
+          pointLabel.textContent = point.label;
+          svg.appendChild(pointLabel);
+        });
+      }
+    }
+
+    root.appendChild(svg);
+
+    if (model.showLegend) {
+      var legend = document.createElement('div');
+      legend.className = 'lf-chart-legend';
+      model.series.forEach(function (item) {
+        var legendItem = document.createElement('div');
+        legendItem.className = 'lf-chart-legend-item';
+
+        var dot = document.createElement('span');
+        dot.className = 'lf-chart-legend-dot';
+        dot.style.background = item.color;
+
+        var label = document.createElement('span');
+        label.className = 'lf-chart-legend-label';
+        label.textContent = item.label;
+
+        var value = document.createElement('span');
+        value.className = 'lf-chart-legend-value';
+        value.textContent = String(item.value);
+
+        legendItem.appendChild(dot);
+        legendItem.appendChild(label);
+        legendItem.appendChild(value);
+        legend.appendChild(legendItem);
+      });
+      root.appendChild(legend);
+    }
+
+    wrap.appendChild(root);
     return wrap;
   }
 

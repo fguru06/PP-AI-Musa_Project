@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { getProjectCanvasSize } from '@/lib/canvas'
+import { buildChartModel } from '@/lib/chart'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
@@ -97,6 +98,26 @@ function getBgStyle(slide) {
   }
   return { background: slide.background || '#fff' }
 }
+
+function getMiniFrameStyle(el) {
+  return {
+    left: (el.x / canvasSize.value.width * 100) + '%',
+    top: (el.y / canvasSize.value.height * 100) + '%',
+    width: (el.width / canvasSize.value.width * 100) + '%',
+    height: (el.height / canvasSize.value.height * 100) + '%',
+  }
+}
+
+function getMiniElementStyle(el) {
+  return {
+    background: el.type === 'shape' ? el.content?.fillColor : (el.type === 'button' ? 'var(--color-primary)' : 'rgba(0,0,0,.1)'),
+    borderRadius: el.type === 'shape' && el.content?.shapeType === 'circle' ? '50%' : undefined,
+  }
+}
+
+function getMiniChartModel(el) {
+  return buildChartModel(el.content || {}, el.width || 420, el.height || 280, project.value?.theme || {})
+}
 </script>
 
 <template>
@@ -128,16 +149,47 @@ function getBgStyle(slide) {
           <div
             v-for="el in slide.elements.slice(0, 6)"
             :key="el.id"
-            class="mini-element"
-            :style="{
-              left: (el.x / canvasSize.width * 100) + '%',
-              top: (el.y / canvasSize.height * 100) + '%',
-              width: (el.width / canvasSize.width * 100) + '%',
-              height: (el.height / canvasSize.height * 100) + '%',
-              background: el.type === 'shape' ? el.content?.fillColor : (el.type === 'button' ? 'var(--color-primary)' : 'rgba(0,0,0,.1)'),
-              borderRadius: el.type === 'shape' && el.content?.shapeType === 'circle' ? '50%' : undefined,
-            }"
-          />
+            class="mini-element-frame"
+            :style="getMiniFrameStyle(el)"
+          >
+            <svg v-if="el.type === 'chart'" class="mini-chart-svg" :viewBox="`0 0 ${el.width || 420} ${el.height || 280}`" preserveAspectRatio="none">
+              <template v-if="getMiniChartModel(el).type === 'bar'">
+                <rect
+                  v-for="bar in getMiniChartModel(el).cartesian.bars"
+                  :key="`mini-bar-${bar.id}`"
+                  :x="bar.x"
+                  :y="bar.y"
+                  :width="bar.width"
+                  :height="bar.height"
+                  :fill="bar.color"
+                  rx="6"
+                />
+              </template>
+              <template v-else-if="getMiniChartModel(el).type === 'line'">
+                <path
+                  :d="getMiniChartModel(el).cartesian.linePath"
+                  :stroke="getMiniChartModel(el).cartesian.points[0]?.color || '#6c47ff'"
+                  stroke-width="10"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </template>
+              <template v-else>
+                <path
+                  v-for="slice in getMiniChartModel(el).circle.slices"
+                  :key="`mini-slice-${slice.id}`"
+                  :d="slice.path"
+                  :fill="slice.color"
+                />
+              </template>
+            </svg>
+            <div
+              v-else
+              class="mini-element"
+              :style="getMiniElementStyle(el)"
+            />
+          </div>
         </div>
         <div class="slide-footer">
           <div class="slide-title">{{ slide.title || `Slide ${idx + 1}` }}</div>
@@ -266,8 +318,21 @@ function getBgStyle(slide) {
   position: relative;
 }
 .mini-element {
+  width: 100%;
+  height: 100%;
   position: absolute;
+  inset: 0;
   border-radius: 2px;
+}
+.mini-element-frame {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 3px;
+}
+.mini-chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 .slide-title {
   font-size: 11px;

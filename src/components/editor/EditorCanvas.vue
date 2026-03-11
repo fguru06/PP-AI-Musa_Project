@@ -12,6 +12,7 @@ import HotspotElement from './elements/HotspotElement.vue'
 import VideoElement from './elements/VideoElement.vue'
 import AudioElement from './elements/AudioElement.vue'
 import QuizElement from './elements/QuizElement.vue'
+import ChartElement from './elements/ChartElement.vue'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
@@ -434,6 +435,7 @@ const elementComponents = {
   video: VideoElement,
   audio: AudioElement,
   quiz: QuizElement,
+  chart: ChartElement,
   divider: 'div',
 }
 

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { CANVAS_SIZE_PRESETS, formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset, normalizeCanvasSettings } from '@/lib/canvas'
+import { buildThemeChartContent, buildThemeChartPalette, paletteToText, parseChartData, parseChartPalette, serializeChartData } from '@/lib/chart'
 import MotionLibraryPanel from './MotionLibraryPanel.vue'
 
 const editorStore = useEditorStore()
@@ -74,15 +75,21 @@ const groupPresetTags = ref('')
 const presetSearchQuery = ref('')
 const presetCategoryFilter = ref('all')
 const presetImportInput = ref(null)
+const chartImportInput = ref(null)
 const pendingImportedPresets = ref([])
 const importScopeFilter = ref('all')
 const importConflictMode = ref('replace')
+const chartImportDraft = ref('')
 
 // Local copy of element for editing
 const local = ref({})
 watch(selectedEl, (el) => {
   if (el) local.value = JSON.parse(JSON.stringify(el))
   else local.value = {}
+
+  if (el?.type === 'chart') {
+    chartImportDraft.value = ''
+  }
 }, { immediate: true, deep: true })
 
 function update(patch) {
@@ -149,6 +156,65 @@ function updateCanvasDimension(dimension, rawValue) {
   }
 
   updateProjectSettings(nextPatch)
+}
+
+const chartThemeDefaults = computed(() => buildThemeChartContent(project.value?.theme || {}))
+const chartPalettePreview = computed(() => {
+  if (selectedEl.value?.type !== 'chart') return []
+
+  const paletteSource = selectedEl.value.content?.paletteText || chartThemeDefaults.value.paletteText
+  return parseChartPalette(paletteSource)
+})
+
+function normalizeChartDataText(rawText) {
+  const parsed = parseChartData(rawText, { fallbackToDefault: false })
+  return parsed.length ? serializeChartData(parsed) : ''
+}
+
+function applyChartImport(rawText) {
+  if (selectedEl.value?.type !== 'chart') return
+
+  const normalized = normalizeChartDataText(rawText)
+  if (!normalized) return
+
+  updateContent({ dataText: normalized })
+  chartImportDraft.value = ''
+}
+
+async function importChartDataFile(event) {
+  const input = event.target
+  const file = input?.files?.[0]
+  if (!file) return
+
+  try {
+    const content = await file.text()
+    applyChartImport(content)
+  } finally {
+    if (input) input.value = ''
+  }
+}
+
+function triggerChartImport() {
+  chartImportInput.value?.click()
+}
+
+function normalizeSelectedChartData() {
+  if (selectedEl.value?.type !== 'chart') return
+  const normalized = normalizeChartDataText(selectedEl.value.content?.dataText || '')
+  if (!normalized) return
+  updateContent({ dataText: normalized })
+}
+
+function applyThemeToSelectedChart() {
+  if (selectedEl.value?.type !== 'chart') return
+  updateContent({
+    ...chartThemeDefaults.value,
+  })
+}
+
+function useAutoChartPalette() {
+  if (selectedEl.value?.type !== 'chart') return
+  updateContent({ paletteText: chartThemeDefaults.value.paletteText })
 }
 
 function parsePresetTags(rawTags) {
@@ -622,6 +688,7 @@ const fontFamilies = [
 <template>
   <div class="properties-panel">
     <input ref="presetImportInput" type="file" accept="application/json,.json" style="display:none" @change="importMotionPresets" />
+    <input ref="chartImportInput" type="file" accept=".csv,.txt,text/csv,text/plain" style="display:none" @change="importChartDataFile" />
     <div class="panel-section autosave-note">
       Changes apply instantly
     </div>
@@ -1252,6 +1319,122 @@ const fontFamilies = [
         </div>
       </div>
 
+      <div v-if="selectedEl.type === 'chart'" class="panel-section">
+        <div class="panel-title">Chart</div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Chart Type</label>
+          <select :value="selectedEl.content?.chartType || 'bar'" class="select" @change="updateContent({ chartType: $event.target.value })">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="circle">Circle</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Title</label>
+          <input :value="selectedEl.content?.title || ''" class="input" @input="updateContent({ title: $event.target.value })" />
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Data or pasted CSV/TSV</label>
+          <textarea
+            :value="selectedEl.content?.dataText || ''"
+            class="textarea"
+            style="min-height:110px"
+            placeholder="Q1, 120&#10;Q2, 180&#10;Q3, 150"
+            @input="updateContent({ dataText: $event.target.value })"
+          />
+          <div class="chart-data-actions">
+            <button type="button" class="btn btn-secondary btn-sm" @click="normalizeSelectedChartData">Normalize rows</button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="triggerChartImport">Upload CSV</button>
+          </div>
+          <div class="field-hint">Use `label, value`, `label: value`, spreadsheet tab-separated rows, or a two-column CSV. Percentages and totals are calculated automatically for circle charts.</div>
+        </div>
+        <div class="form-group chart-import-card" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Paste table data</label>
+          <textarea
+            v-model="chartImportDraft"
+            class="textarea"
+            style="min-height:84px"
+            placeholder="Label,Value&#10;North,42&#10;South,31"
+          />
+          <div class="chart-data-actions">
+            <button type="button" class="btn btn-secondary btn-sm" @click="applyChartImport(chartImportDraft)">Convert pasted data</button>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Palette</label>
+          <input
+            :value="selectedEl.content?.paletteText || ''"
+            class="input"
+            :placeholder="chartThemeDefaults.paletteText"
+            @input="updateContent({ paletteText: $event.target.value })"
+          />
+          <div class="chart-palette-preview">
+            <span v-for="(color, index) in chartPalettePreview" :key="`chart-palette-${index}`" class="chart-palette-swatch" :style="{ background: color }"></span>
+          </div>
+          <div class="chart-data-actions">
+            <button type="button" class="btn btn-secondary btn-sm" @click="useAutoChartPalette">Use theme palette</button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="applyThemeToSelectedChart">Apply theme colors</button>
+          </div>
+          <div class="field-hint">Separate colors with commas. Theme palette uses the project theme colors if you leave this aligned with the generated value.</div>
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr;margin-bottom:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Background</label>
+            <input type="color" :value="selectedEl.content?.backgroundColor || '#ffffff'" class="color-input-native" @input="updateContent({ backgroundColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Text</label>
+            <input type="color" :value="selectedEl.content?.textColor || '#1a1a2e'" class="color-input-native" @input="updateContent({ textColor: $event.target.value })" />
+          </div>
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr;margin-bottom:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Grid</label>
+            <input type="color" :value="selectedEl.content?.gridColor || '#dbe3ef'" class="color-input-native" @input="updateContent({ gridColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Border</label>
+            <input type="color" :value="selectedEl.content?.borderColor || '#e2e8f0'" class="color-input-native" @input="updateContent({ borderColor: $event.target.value })" />
+          </div>
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr;margin-bottom:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Border Width</label>
+            <input type="number" min="0" :value="selectedEl.content?.borderWidth ?? 1" class="input" @change="updateContent({ borderWidth: +$event.target.value })" />
+          </div>
+          <div class="form-group" v-if="selectedEl.content?.chartType !== 'circle'">
+            <label class="form-label">Max Value</label>
+            <input :value="selectedEl.content?.maxValue ?? ''" class="input" placeholder="Auto" @input="updateContent({ maxValue: $event.target.value })" />
+          </div>
+          <div class="form-group" v-else>
+            <label class="form-label">Inner Radius %</label>
+            <input type="number" min="20" max="85" :value="selectedEl.content?.innerRadius ?? 62" class="input" @change="updateContent({ innerRadius: +$event.target.value })" />
+          </div>
+        </div>
+        <div class="geo-grid" v-if="selectedEl.content?.chartType === 'line'" style="grid-template-columns:1fr 1fr;margin-bottom:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Line Width</label>
+            <input type="number" min="1" max="8" :value="selectedEl.content?.strokeWidth ?? 3" class="input" @change="updateContent({ strokeWidth: +$event.target.value })" />
+          </div>
+          <label class="check-row" style="margin-top:20px">
+            <input type="checkbox" :checked="Boolean(selectedEl.content?.showArea)" @change="updateContent({ showArea: $event.target.checked })" />
+            Show area fill
+          </label>
+        </div>
+        <label class="check-row">
+          <input type="checkbox" :checked="selectedEl.content?.showLegend !== false" @change="updateContent({ showLegend: $event.target.checked })" />
+          Show legend
+        </label>
+        <label v-if="selectedEl.content?.chartType !== 'circle'" class="check-row">
+          <input type="checkbox" :checked="selectedEl.content?.showGrid !== false" @change="updateContent({ showGrid: $event.target.checked })" />
+          Show grid lines
+        </label>
+        <label class="check-row">
+          <input type="checkbox" :checked="selectedEl.content?.showValues !== false" @change="updateContent({ showValues: $event.target.checked })" />
+          Show values
+        </label>
+      </div>
+
       <!-- BUTTON properties -->
       <div v-if="selectedEl.type === 'button'" class="panel-section">
         <div class="panel-title">Button</div>
@@ -1665,6 +1848,31 @@ const fontFamilies = [
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
+}
+.chart-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.chart-import-card {
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface-overlay) 72%, #ffffff 28%);
+  border: 1px solid var(--color-border-subtle);
+}
+.chart-palette-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--space-2);
+}
+.chart-palette-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 .canvas-custom-header {
   display: flex;

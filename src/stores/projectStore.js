@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { v4 as uuid } from 'uuid'
 import { useAuthStore } from './authStore'
 import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, normalizeCanvasSettings } from '@/lib/canvas'
+import { buildThemeChartContent } from '@/lib/chart'
 
 let firestoreServicesPromise = null
 
@@ -23,6 +24,7 @@ function makeDefaultTheme() {
     secondaryColor: '#00c9a7',
     bgColor: '#ffffff',
     textColor: '#1a1a2e',
+    chartPalette: '',
     fontFamily: 'Inter, sans-serif',
     fontSize: 16,
     headingFont: 'Inter, sans-serif',
@@ -393,8 +395,9 @@ async function deleteRemoteProject(userId, projectId) {
 async function migrateBrowserProjects(userId) {
   if (!userId) return
 
-  const cachedProjects = [...loadLocal(), ...loadLocal(userId)]
-  if (!cachedProjects.length) return
+  const anonymousProjects = loadLocal()
+  const accountProjects = loadLocal(userId)
+  if (!anonymousProjects.length && !accountProjects.length) return
 
   const { db, collection, doc, getDocs, writeBatch } = await getFirestoreServices()
   const collectionRef = collection(db, 'users', userId, 'projects')
@@ -402,20 +405,31 @@ async function migrateBrowserProjects(userId) {
   const existingIds = new Set(existingSnapshot.docs.map(projectDoc => projectDoc.id))
   const batch = writeBatch(db)
   let hasWrites = false
+  const allowAccountCacheRestore = existingSnapshot.empty
 
-  cachedProjects.forEach(project => {
+  anonymousProjects.forEach(project => {
     if (existingIds.has(project.id)) return
     batch.set(doc(collectionRef, project.id), normalizeProject(project))
     existingIds.add(project.id)
     hasWrites = true
   })
 
+  // Only restore account-scoped local cache when the remote collection is empty.
+  // Otherwise an older browser cache can resurrect projects deleted on another device.
+  if (allowAccountCacheRestore) {
+    accountProjects.forEach(project => {
+      if (existingIds.has(project.id)) return
+      batch.set(doc(collectionRef, project.id), normalizeProject(project))
+      existingIds.add(project.id)
+      hasWrites = true
+    })
+  }
+
   if (hasWrites) {
     await batch.commit()
   }
 
   clearLocal()
-  clearLocal(userId)
 }
 
 export const useProjectStore = defineStore('projects', () => {
@@ -680,6 +694,7 @@ export const useProjectStore = defineStore('projects', () => {
     if (!slide) return null
     const maxZ = slide.elements.reduce((m, e) => Math.max(m, e.zIndex || 0), 0)
     const defaults = elementDefaults(elementType)
+    const chartThemeDefaults = elementType === 'chart' ? buildThemeChartContent(p.theme || {}) : null
     const el = {
       id: uuid(),
       type: elementType,
@@ -691,6 +706,7 @@ export const useProjectStore = defineStore('projects', () => {
       visible: true,
       opacity: 1,
       ...defaults,
+      ...(chartThemeDefaults ? { content: { ...defaults.content, ...chartThemeDefaults } } : {}),
       ...extra,
       interactions: [],
       animations: [],
@@ -831,6 +847,7 @@ function elementDefaults(type) {
     audio: { width: 280, height: 56, content: { src: '', label: 'Audio Player', autoplay: false, controls: true, loop: false, bgColor: '#ede7ff', textColor: '#555555', accentColor: '#6c47ff' }, styles: {} },
     divider: { width: 400, height: 4, content: { color: '#e2e8f0', thickness: 2 }, styles: {} },
     quiz: { width: 480, height: 300, content: { question: 'Your question here?', options: ['Option A', 'Option B', 'Option C', 'Option D'], correctIndex: 0, explanation: '', cardBgColor: '#ffffff', questionColor: '#1a1a2e', accentColor: '#6c47ff' }, styles: {} },
+    chart: { width: 420, height: 280, content: { chartType: 'bar', title: 'Quarterly Results', dataText: 'Q1, 120\nQ2, 180\nQ3, 150\nQ4, 210', paletteText: '#6c47ff, #06b6d4, #22c55e, #f59e0b', showLegend: true, showGrid: true, showValues: true, showArea: false, innerRadius: 62, strokeWidth: 3, maxValue: '', xAxisLabel: '', yAxisLabel: '', backgroundColor: '#ffffff', textColor: '#1a1a2e', gridColor: '#dbe3ef', borderColor: '#e2e8f0', borderWidth: 1 }, styles: {} },
   }
   return map[type] || map.text
 }

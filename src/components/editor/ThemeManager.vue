@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
+import { buildThemeChartContent, buildThemeChartPalette, paletteToText } from '@/lib/chart'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
 
 const project = computed(() => projectStore.getProject(editorStore.projectId))
 const theme = computed(() => project.value?.theme || {})
+const chartPalettePreview = computed(() => buildThemeChartPalette(theme.value))
 const applyMessage = ref('')
 const applyError = ref('')
 
@@ -103,7 +105,20 @@ function themedPatchForElement(element, currentTheme) {
     }
   }
 
+  if (element.type === 'chart') {
+    return {
+      content: {
+        ...c,
+        ...buildThemeChartContent(currentTheme),
+      },
+    }
+  }
+
   return null
+}
+
+function resetChartPaletteToAuto() {
+  updateTheme({ chartPalette: '' })
 }
 
 function applyThemeToSlides() {
@@ -196,6 +211,26 @@ function applyThemeToSlides() {
     </div>
 
     <div class="panel-section">
+      <div class="panel-title">Chart Palette</div>
+      <div class="theme-field">
+        <label class="form-label">Chart Colors</label>
+        <input
+          :value="theme.chartPalette || ''"
+          class="input"
+          :placeholder="paletteToText(buildThemeChartPalette(theme))"
+          @change="updateTheme({ chartPalette: $event.target.value })"
+        />
+        <div class="chart-palette-preview">
+          <span v-for="(color, index) in chartPalettePreview" :key="`theme-chart-${index}`" class="chart-palette-dot" :style="{ background: color }"></span>
+        </div>
+        <div class="chart-palette-actions">
+          <button type="button" class="btn btn-secondary btn-sm" @click="resetChartPaletteToAuto">Use auto palette</button>
+        </div>
+        <div class="field-hint">Leave blank to derive chart colors from the theme primary, secondary, background, and text colors.</div>
+      </div>
+    </div>
+
+    <div class="panel-section">
       <div class="panel-title">Typography</div>
       <div class="form-group" style="margin-bottom:var(--space-3)">
         <label class="form-label">Heading Font</label>
@@ -229,6 +264,9 @@ function applyThemeToSlides() {
         </div>
         <div class="tp-btn" :style="{ background: theme.primaryColor }">Button</div>
         <div class="tp-badge" :style="{ background: theme.secondaryColor }">Badge</div>
+        <div class="tp-chart-row">
+          <span v-for="(color, index) in chartPalettePreview.slice(0, 5)" :key="`preview-chart-${index}`" class="tp-chart-bar" :style="{ background: color, height: `${22 + (index * 8)}px` }"></span>
+        </div>
       </div>
       <button class="btn btn-primary w-full apply-theme-btn" @click="applyThemeToSlides">
         Apply Theme to Slides
@@ -293,6 +331,23 @@ function applyThemeToSlides() {
 }
 .theme-fields { display: flex; flex-direction: column; gap: var(--space-3); }
 .theme-field { display: flex; flex-direction: column; gap: 4px; }
+.chart-palette-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--space-2);
+}
+.chart-palette-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+.chart-palette-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
 .color-row { display: flex; align-items: center; gap: var(--space-2); }
 .color-input-native {
   width: 36px; height: 28px;
@@ -331,6 +386,17 @@ function applyThemeToSlides() {
   font-size: 11px;
   font-weight: 600;
   align-self: flex-start;
+}
+.tp-chart-row {
+  display: flex;
+  align-items: end;
+  gap: 6px;
+  min-height: 58px;
+}
+.tp-chart-bar {
+  flex: 1;
+  border-radius: 8px 8px 4px 4px;
+  min-height: 18px;
 }
 
 .apply-theme-btn {
