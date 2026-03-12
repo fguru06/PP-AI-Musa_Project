@@ -887,24 +887,6 @@ function normalizeImagePromptText(rawPrompt) {
     .slice(0, 220)
 }
 
-function buildAiImageCandidates(promptText, seed) {
-  const encoded = encodeURIComponent(promptText)
-  const keywords = promptText
-    .toLowerCase()
-    .replace(/[^a-z0-9\s,]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 5)
-    .join(',') || 'business,technology'
-  const base = `https://pollinations.ai/p/${encoded}`
-  return [
-    `${base}?width=600&height=400&nologo=true&seed=${seed}`,
-    `${base}?width=600&height=400&seed=${seed}`,
-    `${base}?seed=${seed}`,
-    `https://loremflickr.com/800/600/${keywords}?lock=${seed}`,
-  ]
-}
-
 function withTimeout(promise, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
@@ -929,6 +911,11 @@ async function generateAiImage() {
   result.value = 'Preparing image prompt...'
 
   try {
+    if (!aiStore.apiKey || aiStore.apiProvider !== 'openai') {
+      result.value = 'AI image generation requires an OpenAI API key in API settings. No fallback image was inserted.'
+      return
+    }
+
     let finalPrompt = imageTopic.value
     try {
       const enhanced = await withTimeout(aiStore.generateImagePrompt(imageTopic.value), 2200)
@@ -943,35 +930,25 @@ async function generateAiImage() {
 
     result.value = 'Generating image and inserting it on the slide...'
 
-    const seed = Math.floor(Math.random() * 1000000)
     const aiGeneratedSrc = await withTimeout(aiStore.generateImageAsset(finalPrompt), 20000).catch(() => null)
-    const [providerPrimaryUrl, ...providerFallbackUrls] = buildAiImageCandidates(finalPrompt, seed)
-    const primaryUrl = aiGeneratedSrc || providerPrimaryUrl
-    const fallbackUrls = providerFallbackUrls
-    const imageSourceType = aiGeneratedSrc
-      ? 'openai-image'
-      : primaryUrl.includes('loremflickr.com')
-        ? 'reference-fallback'
-        : 'pollinations-fallback'
+
+    if (!aiGeneratedSrc) {
+      result.value = 'OpenAI image generation did not return an image. Try a simpler prompt or try again in a moment.'
+      return
+    }
 
     projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
       x: 60, y: 150, width: 420, height: 280, // matches 600x400 aspect ratio
       content: {
-        src: primaryUrl,
-        fallbackSrcs: fallbackUrls,
+        src: aiGeneratedSrc,
+        fallbackSrcs: [],
         alt: imageTopic.value.trim() || 'AI generated image',
-        sourceType: imageSourceType,
+        sourceType: 'openai-image',
         objectFit: 'cover',
       }
     })
 
-    if (imageSourceType === 'openai-image') {
-      result.value = 'AI image added to slide using OpenAI image generation.'
-    } else if (imageSourceType === 'pollinations-fallback') {
-      result.value = 'Added an image using the Pollinations fallback provider. Add an OpenAI API key in API settings for direct AI image generation.'
-    } else {
-      result.value = 'Added a fallback reference image because no AI image provider responded reliably. Add an OpenAI API key in API settings for direct AI image generation.'
-    }
+    result.value = 'AI image added to slide using OpenAI image generation.'
   } catch (error) {
     result.value = 'Could not insert the image right now. Try again in a moment.'
   } finally {
@@ -1446,11 +1423,15 @@ async function runFreePrompt() {
       <!-- Image Generation -->
       <template v-else-if="activeMode === 'image'">
         <p class="ai-hint" style="margin-bottom:var(--space-3)">Generate distinct educational visual assets instantly. The image will be added directly to your slide.</p>
+        <div v-if="!aiStore.apiKey || aiStore.apiProvider !== 'openai'" class="ai-error" style="margin-bottom: var(--space-3)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          AI image generation needs an OpenAI API key in API settings. This action no longer inserts fallback photos.
+        </div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Image Description</label>
           <textarea v-model="imageTopic" class="textarea" style="min-height:100px" placeholder="Describe the image (e.g. 'A futuristic city skyline at sunset in a vibrant retro style')" />
         </div>
-<button class="btn btn-primary w-full ai-generate-btn" :disabled="isImageGenerating || aiStore.isGenerating || !imageTopic" @click="generateAiImage">
+<button class="btn btn-primary w-full ai-generate-btn" :disabled="isImageGenerating || aiStore.isGenerating || !imageTopic || !aiStore.apiKey || aiStore.apiProvider !== 'openai'" @click="generateAiImage">
             <span v-if="isImageGenerating || aiStore.isGenerating" class="spinner" />
             {{ (isImageGenerating || aiStore.isGenerating) ? 'Generating Image…' : 'Generate & Insert' }}
         </button>
