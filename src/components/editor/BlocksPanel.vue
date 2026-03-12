@@ -205,6 +205,17 @@ function onBlockDragStart(event, block) {
         <div class="panel-section-title">Blocks</div>
         <div class="blocks-panel-subtitle">Drop in reusable sections for faster slide building.</div>
       </div>
+      <button
+        type="button"
+        class="btn btn-icon blocks-close-btn"
+        @click="editorStore.toggleSlidePanel('blocks')"
+        aria-label="Close blocks panel"
+        title="Close blocks panel"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
     </div>
 
     <div class="blocks-toolbar">
@@ -352,6 +363,16 @@ function onBlockDragStart(event, block) {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
   line-height: 1.5;
+}
+
+.blocks-close-btn {
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-surface-raised) 88%, #ffffff 12%);
+  border: 1px solid var(--color-border);
+}
+
+.blocks-close-btn:hover {
+  color: var(--color-text);
 }
 
 .blocks-toolbar {

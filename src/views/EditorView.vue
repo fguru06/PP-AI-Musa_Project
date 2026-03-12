@@ -267,7 +267,7 @@ function handleAuthoringOption(id) {
     return
   }
   if (id === 'blocks') {
-    editorStore.openLeftPanel('blocks')
+    editorStore.toggleSlidePanel('blocks')
     return
   }
   if (id === 'resources') {
