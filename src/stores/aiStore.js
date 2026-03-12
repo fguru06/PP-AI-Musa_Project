@@ -45,6 +45,131 @@ function buildLayoutInstruction(layoutMode) {
   return instructionMap[layout] || instructionMap.classic
 }
 
+function buildDeckLayoutInstruction(layoutStrategy, layoutMode) {
+  if (layoutStrategy === 'single') {
+    const layout = normalizeLayoutMode(layoutMode)
+    return `Use the ${layout} layout for every slide in the deck.`
+  }
+
+  return 'Vary layouts across the deck when appropriate. Use a balanced mix of classic, cards, comparison, metrics, timeline, FAQ, and process layouts based on each slide purpose.'
+}
+
+function buildDeckSchema() {
+  return `{
+  "slides": [
+    {
+      "title": "Concise slide title",
+      "subtitle": "Optional one-line subtitle",
+      "callout": "Key takeaway",
+      "slideType": "intro|overview|concept|example|summary|callout|general",
+      "layout": "classic|cards|comparison|metrics|timeline|faq|process",
+      "bullets": ["Point 1", "Point 2", "Point 3"],
+      "cards": [{ "title": "Card title", "body": "Short supporting copy" }],
+      "comparison": { "leftTitle": "Option A", "leftPoints": ["Point 1"], "rightTitle": "Option B", "rightPoints": ["Point 1"] },
+      "metrics": [{ "value": "92%", "label": "KPI label" }],
+      "timeline": [{ "title": "Phase title", "detail": "Short explanation" }],
+      "faqs": [{ "question": "Question?", "answer": "Short answer" }],
+      "process": [{ "title": "Step title", "detail": "What happens here" }]
+    }
+  ]
+}`
+}
+
+function buildTextTransformSchema(layoutMode) {
+  return buildLayoutSchema('the source material', layoutMode)
+}
+
+function mapDeckSlideMock(topic, index, count, layoutStrategy, layoutMode) {
+  const layouts = ['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process']
+  const chosenLayout = layoutStrategy === 'single'
+    ? normalizeLayoutMode(layoutMode)
+    : layouts[index % layouts.length]
+  const isFirst = index === 0
+  const isLast = index === count - 1
+  const slideType = isFirst ? 'intro' : isLast ? 'summary' : 'concept'
+
+  const common = {
+    title: isFirst
+      ? `${topic}: Introduction`
+      : isLast
+        ? `${topic}: Key Takeaways`
+        : `${topic}: Core Idea ${index}`,
+    subtitle: isFirst
+      ? `Why ${topic} matters`
+      : isLast
+        ? 'Summary and next steps'
+        : 'Building practical understanding',
+    callout: isLast
+      ? `Use these principles of ${topic} to guide decisions and actions.`
+      : 'Focus on clarity and practical application.',
+    slideType,
+    layout: chosenLayout,
+  }
+
+  const byLayout = {
+    classic: {
+      ...common,
+      bullets: [
+        `Understand a concrete aspect of ${topic}`,
+        'Apply this concept in a practical context',
+        'Connect this idea to real-world outcomes',
+      ],
+    },
+    cards: {
+      ...common,
+      cards: [
+        { title: 'Core concept', body: `Define an essential idea about ${topic}.` },
+        { title: 'Business impact', body: 'Explain why it matters in practice.' },
+        { title: 'Action', body: 'Give the audience one concrete next step.' },
+      ],
+    },
+    comparison: {
+      ...common,
+      comparison: {
+        leftTitle: 'Current state',
+        leftPoints: ['Manual steps', 'Inconsistent results', 'Limited visibility'],
+        rightTitle: 'Improved state',
+        rightPoints: ['Faster execution', 'Clear standards', 'Better outcomes'],
+      },
+    },
+    metrics: {
+      ...common,
+      metrics: [
+        { value: '92%', label: 'Completion rate' },
+        { value: '3.4x', label: 'Engagement lift' },
+        { value: '14d', label: 'Ramp time' },
+      ],
+    },
+    timeline: {
+      ...common,
+      timeline: [
+        { title: 'Discover', detail: 'Define the opportunity.' },
+        { title: 'Design', detail: 'Build the approach.' },
+        { title: 'Pilot', detail: 'Test with a small audience.' },
+        { title: 'Scale', detail: 'Roll out and optimize.' },
+      ],
+    },
+    faq: {
+      ...common,
+      faqs: [
+        { question: 'What is it?', answer: `A practical view of ${topic}.` },
+        { question: 'Why does it matter?', answer: 'It improves decision quality and speed.' },
+        { question: 'What should happen next?', answer: 'Pilot the approach and measure the result.' },
+      ],
+    },
+    process: {
+      ...common,
+      process: [
+        { title: 'Assess', detail: 'Review current performance.' },
+        { title: 'Build', detail: 'Create the new workflow.' },
+        { title: 'Refine', detail: 'Measure and improve continuously.' },
+      ],
+    },
+  }
+
+  return byLayout[chosenLayout] || byLayout.classic
+}
+
 function buildMockSlideContent(topic, layoutMode) {
   const layout = normalizeLayoutMode(layoutMode)
   const common = {
@@ -221,8 +346,12 @@ Rules:
     objective = '',
     tone = 'professional',
     customPrompt = '',
+    layoutStrategy = 'mixed',
+    layoutMode = 'classic',
   } = {}) {
     const requestedCount = Math.max(1, Math.min(20, Number(slideCount) || 1))
+    const normalizedLayoutStrategy = layoutStrategy === 'single' ? 'single' : 'mixed'
+    const normalizedLayoutMode = normalizeLayoutMode(layoutMode)
     let prompt
 
     if (customPrompt.trim()) {
@@ -232,28 +361,28 @@ Rules:
       const objectiveNote = objective.trim() ? `\nLearning objective: ${objective.trim()}` : ''
       prompt = `You are an expert eLearning instructional designer.
 Create a complete ${requestedCount}-slide deck about "${topic}" in a ${tone} tone.${audienceNote}${objectiveNote}
+Deck layout strategy: ${normalizedLayoutStrategy}
+Layout instruction: ${buildDeckLayoutInstruction(normalizedLayoutStrategy, normalizedLayoutMode)}
 
 Return ONLY valid JSON, no markdown, in this shape:
-{
-  "slides": [
-    {
-      "title": "Concise slide title",
-      "subtitle": "Optional one-line subtitle",
-      "bullets": ["Point 1", "Point 2", "Point 3"],
-      "callout": "Key takeaway",
-      "slideType": "intro|overview|concept|example|summary|callout|general"
-    }
-  ]
-}
+${buildDeckSchema()}
 
 Rules:
 - Return exactly ${requestedCount} slides
 - Sequence the deck logically: intro → concept build-up → applied example(s) → summary
 - Keep each slide distinct and avoid repeated bullet wording
-- Keep bullets concise (3-5 per slide), action-oriented, and specific to "${topic}"`
+- Every slide must include a valid layout
+- Include only the fields needed for each slide's chosen layout and keep content specific to "${topic}"`
     }
 
-    const result = await generate(prompt, { type: 'slideDeck', topic, slideCount: requestedCount, tone })
+    const result = await generate(prompt, {
+      type: 'slideDeck',
+      topic,
+      slideCount: requestedCount,
+      tone,
+      layoutStrategy: normalizedLayoutStrategy,
+      layoutMode: normalizedLayoutMode,
+    })
     if (!result) return null
 
     try {
@@ -279,10 +408,74 @@ Rules:
               .filter(Boolean),
             callout: String(slide?.callout || '').trim(),
             slideType: String(slide?.slideType || 'general').trim(),
+            layout: normalizeLayoutMode(slide?.layout || (normalizedLayoutStrategy === 'single' ? normalizedLayoutMode : 'classic')),
+            cards: Array.isArray(slide?.cards) ? slide.cards : [],
+            comparison: slide?.comparison || null,
+            metrics: Array.isArray(slide?.metrics) ? slide.metrics : [],
+            timeline: Array.isArray(slide?.timeline) ? slide.timeline : [],
+            faqs: Array.isArray(slide?.faqs) ? slide.faqs : [],
+            process: Array.isArray(slide?.process) ? slide.process : [],
           }
         })
     } catch {
       return null
+    }
+  }
+
+  async function transformSourceTextToSlideContent(sourceText, {
+    topic = '',
+    slideType = 'general',
+    description = '',
+    layoutMode = 'classic',
+    customPrompt = '',
+  } = {}) {
+    const normalizedLayoutMode = normalizeLayoutMode(layoutMode)
+    const trimmedSource = String(sourceText || '').trim()
+    if (!trimmedSource) return null
+
+    let prompt
+    if (customPrompt.trim()) {
+      prompt = customPrompt.trim()
+    } else {
+      const topicNote = topic.trim() ? `\nTopic hint: ${topic.trim()}` : ''
+      const descriptionNote = description.trim() ? `\nAdditional context: ${description.trim()}` : ''
+      prompt = `You are an expert eLearning content strategist and visual slide designer.
+Transform the following source material into a concise ${slideType} slide.${topicNote}${descriptionNote}
+Layout mode: ${normalizedLayoutMode}
+Layout instruction: ${buildLayoutInstruction(normalizedLayoutMode)}
+
+Return ONLY a valid JSON object matching this shape:
+${buildTextTransformSchema(normalizedLayoutMode)}
+
+Rules:
+- Preserve the intent and most important facts from the source material
+- Compress and rewrite for slide readability; do not copy long paragraphs verbatim
+- Do not invent highly specific facts that are not implied by the source material
+- Keep the output concise, presentation-ready, and specific
+
+Source material:
+"""
+${trimmedSource}
+"""`
+    }
+
+    const result = await generate(prompt, {
+      type: 'slideContent',
+      sourceText: trimmedSource,
+      topic,
+      slideType,
+      layoutMode: normalizedLayoutMode,
+      mode: 'transform',
+    })
+    if (!result) return null
+    try {
+      return JSON.parse(result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
+    } catch {
+      return {
+        title: topic || 'Transformed Slide',
+        bullets: trimmedSource.split(/\n+/).map((line) => line.trim()).filter(Boolean).slice(0, 4),
+        layout: normalizedLayoutMode,
+      }
     }
   }
 
@@ -368,31 +561,9 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
     const samples = {
       slideContent: buildMockSlideContent(context.topic, context.layoutMode),
       slideDeck: JSON.stringify({
-        slides: Array.from({ length: count }, (_, index) => {
-          const isFirst = index === 0
-          const isLast = index === count - 1
-          return {
-            title: isFirst
-              ? `${topic}: Introduction`
-              : isLast
-                ? `${topic}: Key Takeaways`
-                : `${topic}: Core Idea ${index}`,
-            subtitle: isFirst
-              ? `Why ${topic} matters`
-              : isLast
-                ? `Summary and next steps`
-                : `Building practical understanding`,
-            bullets: [
-              `Understand a concrete aspect of ${topic}`,
-              `Apply this concept in a practical context`,
-              `Connect this idea to real-world outcomes`,
-            ],
-            callout: isLast
-              ? `Use these principles of ${topic} to guide decisions and actions.`
-              : `Focus on clarity and practical application.`,
-            slideType: isFirst ? 'intro' : isLast ? 'summary' : 'concept',
-          }
-        }),
+        slides: Array.from({ length: count }, (_, index) =>
+          mapDeckSlideMock(topic, index, count, context.layoutStrategy, context.layoutMode)
+        ),
       }),
       quiz: JSON.stringify([
         { question: 'Which of the following best describes the core concept of this topic?', options: ['It focuses on foundational principles', 'It applies advanced methodologies', 'It combines theory with practice', 'It relies solely on memorization'], correctIndex: 2, explanation: 'Combining theory with practice is the most effective approach for deep understanding.', difficulty: 'intermediate', type: 'multiple-choice' },
@@ -419,7 +590,7 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
   return {
     apiKey, apiProvider, isGenerating, lastError, generationHistory,
     setApiKey, setProvider, generate,
-    generateSlideContent, generateSlideDeck, generateQuiz, generateVoiceoverScript,
+    generateSlideContent, generateSlideDeck, transformSourceTextToSlideContent, generateQuiz, generateVoiceoverScript,
     generateTranslation, improveText, generateImagePrompt,
   }
 })

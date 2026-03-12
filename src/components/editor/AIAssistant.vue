@@ -245,6 +245,7 @@ const contentCustomPrompt = ref('')
 const contentPromptUserEdited = ref(false)
 const contentGenerationMode = ref('single') // 'single' | 'deck'
 const contentLayoutMode = ref('classic')
+const deckLayoutStrategy = ref('mixed')
 const deckSlideCount = ref(5)
 const contentOutputMode = ref('slide') // 'slide' | 'options'
 const creativeOptions = ref([])
@@ -258,7 +259,13 @@ const contentAutoPrompt = computed(() => {
   if (contentGenerationMode.value === 'deck') {
     let promptText = `Create a complete ${deckSlideCount.value}-slide learning deck about "${t}".`
     if (contentDescription.value.trim()) promptText += `\nAdditional context: ${contentDescription.value.trim()}`
-    promptText += `\nReturn ONLY valid JSON: { "slides": [{ "title": "...", "subtitle": "...", "bullets": ["..."], "callout": "...", "slideType": "..." }] }`
+    promptText += `\nDeck layout strategy: ${deckLayoutStrategy.value}`
+    if (deckLayoutStrategy.value === 'single') {
+      promptText += `\nUse the ${contentLayoutMode.value} layout for every slide.`
+    } else {
+      promptText += '\nMix layouts across the deck when appropriate.'
+    }
+    promptText += `\nReturn ONLY valid JSON: { "slides": [{ "title": "...", "subtitle": "...", "callout": "...", "slideType": "...", "layout": "classic|cards|comparison|metrics|timeline|faq|process" }] }`
     promptText += `\nMake each slide distinct, logically sequenced, and specific to "${t}".`
     return promptText
   }
@@ -324,6 +331,18 @@ const selectedEl = computed(() =>
   editorStore.selectedElementId
     ? slide.value?.elements?.find(e => e.id === editorStore.selectedElementId) : null
 )
+const selectedTextElements = computed(() => {
+  const selectedIds = new Set(editorStore.selectedElementIds)
+  return (slide.value?.elements || []).filter((element) =>
+    selectedIds.has(element.id) && typeof element?.content?.text === 'string' && element.content.text.trim()
+  )
+})
+const selectedTextSource = computed(() =>
+  selectedTextElements.value
+    .map((element) => element.content.text.trim())
+    .filter(Boolean)
+    .join('\n\n')
+)
 
 async function generateSlide() {
   if (!topic.value.trim() && !contentCustomPrompt.value.trim()) return
@@ -335,6 +354,8 @@ async function generateSlide() {
     const deck = await aiStore.generateSlideDeck(topic.value, deckSlideCount.value, {
       objective: contentDescription.value,
       customPrompt: contentCustomPrompt.value,
+      layoutStrategy: deckLayoutStrategy.value,
+      layoutMode: contentLayoutMode.value,
     })
     if (deck?.length) {
       const normalizedDeck = deck.map(item => normalizeSlideContent(item))
@@ -366,7 +387,12 @@ async function generateSlide() {
 function normalizeSlideContent(content) {
   const parsed = content && typeof content === 'object' ? content : {}
   const bullets = normalizeTextList(parsed.bullets)
-  const layout = normalizeLayoutId(parsed.layout || parsed.design?.layout, contentLayoutMode.value)
+  const layout = normalizeLayoutId(
+    parsed.layout || parsed.design?.layout,
+    contentGenerationMode.value === 'deck' && deckLayoutStrategy.value === 'mixed'
+      ? 'classic'
+      : contentLayoutMode.value
+  )
 
   return {
     title: String(parsed.title || topic.value || 'Untitled Slide').trim(),
@@ -455,6 +481,25 @@ function appendBlockCallout(block, callout) {
       fontFamily: 'Inter, sans-serif',
     },
   })
+}
+
+function getElementBounds(elements) {
+  const items = Array.isArray(elements) ? elements : []
+  if (!items.length) {
+    return { minX: 40, minY: 54, width: 0, height: 0 }
+  }
+
+  const minX = Math.min(...items.map((element) => Number(element.x || 0)))
+  const minY = Math.min(...items.map((element) => Number(element.y || 0)))
+  const maxX = Math.max(...items.map((element) => Number(element.x || 0) + Number(element.width || 0)))
+  const maxY = Math.max(...items.map((element) => Number(element.y || 0) + Number(element.height || 0)))
+
+  return {
+    minX,
+    minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+  }
 }
 
 function resolveGeneratedBlockOrigin(projectId, block) {
@@ -617,7 +662,7 @@ function applyClassicContentToSlide(projectId, slideId, normalized) {
   }
 }
 
-function applyNormalizedContentToSlide(projectId, slideId, normalized, { replaceGenerated = false } = {}) {
+function applyNormalizedContentToSlide(projectId, slideId, normalized, { replaceGenerated = false, origin = null } = {}) {
   if (!projectId || !slideId) return
 
   if (replaceGenerated) {
@@ -628,8 +673,8 @@ function applyNormalizedContentToSlide(projectId, slideId, normalized, { replace
   projectStore.updateSlide(projectId, slideId, { title: normalized.title || 'Untitled Slide' })
 
   if (block) {
-    const origin = resolveGeneratedBlockOrigin(projectId, block)
-    projectStore.insertContentBlock(projectId, slideId, block, origin)
+    const blockOrigin = origin || resolveGeneratedBlockOrigin(projectId, block)
+    projectStore.insertContentBlock(projectId, slideId, block, blockOrigin)
   } else {
     applyClassicContentToSlide(projectId, slideId, normalized)
   }
@@ -730,6 +775,34 @@ async function useCreativeOption(option) {
   contentPromptUserEdited.value = true
   contentOutputMode.value = 'slide'
   await generateSlide()
+}
+
+async function transformSelectedTextToLayout() {
+  if (!selectedTextSource.value.trim() || !editorStore.projectId || !editorStore.currentSlideId) return
+
+  const transformed = await aiStore.transformSourceTextToSlideContent(selectedTextSource.value, {
+    topic: topic.value,
+    slideType: slideType.value,
+    description: contentDescription.value,
+    layoutMode: contentLayoutMode.value,
+    customPrompt: contentCustomPrompt.value,
+  })
+
+  if (!transformed) return
+
+  const normalized = normalizeSlideContent(transformed)
+  const bounds = getElementBounds(selectedTextElements.value)
+  const targetOrigin = {
+    x: Math.max(24, Math.round(bounds.minX)),
+    y: Math.max(24, Math.round(bounds.minY)),
+  }
+
+  selectedTextElements.value.forEach((element) => {
+    projectStore.deleteElement(editorStore.projectId, editorStore.currentSlideId, element.id)
+  })
+
+  result.value = JSON.stringify(normalized, null, 2)
+  applyNormalizedContentToSlide(editorStore.projectId, editorStore.currentSlideId, normalized, { origin: targetOrigin })
 }
 
 async function generateQuiz(keepExisting = false) {
@@ -949,6 +1022,41 @@ async function runFreePrompt() {
           <p class="form-hint">Generates this many slides from one full prompt.</p>
         </div>
 
+        <div v-if="contentGenerationMode === 'deck'" class="form-group">
+          <div class="layout-label-row">
+            <label class="form-label">Deck Layouts</label>
+            <span class="layout-current-hint">{{ deckLayoutStrategy === 'mixed' ? 'AI can vary layout by slide' : `All slides use ${selectedContentLayout.label}` }}</span>
+          </div>
+          <div class="output-mode-switch" role="group" aria-label="Deck layout strategy">
+            <button
+              :class="['output-mode-btn', deckLayoutStrategy === 'mixed' && 'active']"
+              @click="deckLayoutStrategy = 'mixed'"
+            >Mixed Layouts</button>
+            <button
+              :class="['output-mode-btn', deckLayoutStrategy === 'single' && 'active']"
+              @click="deckLayoutStrategy = 'single'"
+            >Consistent Layout</button>
+          </div>
+        </div>
+
+        <div v-if="contentGenerationMode === 'deck' && deckLayoutStrategy === 'single'" class="form-group">
+          <div class="layout-label-row">
+            <label class="form-label">Deck Layout</label>
+            <span class="layout-current-hint">{{ selectedContentLayout.hint }}</span>
+          </div>
+          <div class="layout-preset-grid" role="group" aria-label="Deck layout preset">
+            <button
+              v-for="layout in CONTENT_LAYOUT_OPTIONS"
+              :key="`deck-${layout.id}`"
+              :class="['layout-preset-card', contentLayoutMode === layout.id && 'active']"
+              @click="contentLayoutMode = layout.id"
+            >
+              <span class="layout-preset-title">{{ layout.label }}</span>
+              <span class="layout-preset-hint">{{ layout.hint }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Additional description -->
         <div class="form-group">
           <label class="form-label">Description <span class="optional">(optional)</span></label>
@@ -989,6 +1097,19 @@ async function runFreePrompt() {
             :class="['output-mode-btn', contentOutputMode === 'options' && 'active']"
             @click="contentOutputMode = 'options'"
           >Creative Options</button>
+        </div>
+
+        <div v-if="contentGenerationMode === 'single' && selectedTextSource" class="selected-source-card">
+          <div class="result-header">
+            <span class="form-label">Selected Text Source</span>
+            <span class="source-count-badge">{{ selectedTextElements.length }} selected</span>
+          </div>
+          <div class="selected-source-preview">{{ selectedTextSource }}</div>
+          <div class="selected-source-actions">
+            <button class="btn btn-secondary btn-sm" :disabled="aiStore.isGenerating" @click="transformSelectedTextToLayout">
+              Transform Selection to {{ selectedContentLayout.label }}
+            </button>
+          </div>
         </div>
 
         <!-- Generate + Regenerate -->
@@ -1394,6 +1515,38 @@ async function runFreePrompt() {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-3);
+}
+.selected-source-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-surface-overlay) 72%, #ffffff 28%);
+  box-shadow: var(--shadow-sm);
+}
+.selected-source-preview {
+  padding: var(--space-3);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.selected-source-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.source-count-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary-light) 60%, transparent);
+  color: var(--color-primary);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
 .text-preview { font-size: var(--text-sm); color: var(--color-text-muted); font-style: italic; }
 .ai-hint { font-size: var(--text-sm); color: var(--color-text-dim); text-align: center; padding: var(--space-4) 0; }
