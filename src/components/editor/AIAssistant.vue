@@ -877,6 +877,26 @@ async function applyTranslation() {
 const imageTopic = ref('')
 const isImageGenerating = ref(false)
 
+function normalizeImagePromptText(rawPrompt) {
+  return String(rawPrompt || '')
+    .replace(/```(json)?\n?/gi, ' ')
+    .replace(/```/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 220)
+}
+
+function buildAiImageCandidates(promptText, seed) {
+  const encoded = encodeURIComponent(promptText)
+  const base = `https://image.pollinations.ai/prompt/${encoded}`
+  return [
+    `${base}?width=600&height=400&nologo=true&seed=${seed}`,
+    `${base}?width=600&height=400&nologo=true&seed=${seed}&model=flux`,
+    `${base}?width=600&height=400&nologo=true&seed=${seed}&enhance=true`,
+  ]
+}
+
 function withTimeout(promise, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
@@ -911,18 +931,24 @@ async function generateAiImage() {
       finalPrompt = imageTopic.value
     }
 
+    finalPrompt = normalizeImagePromptText(finalPrompt) || normalizeImagePromptText(imageTopic.value)
+
     result.value = 'Generating image and inserting it on the slide...'
 
-    // Pollinations renders the image lazily from the URL, so insert immediately instead of blocking on preload.
     const seed = Math.floor(Math.random() * 1000000)
-    const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=600&height=400&nologo=true&seed=${seed}`
+    const [primaryUrl, ...fallbackUrls] = buildAiImageCandidates(finalPrompt, seed)
 
     projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
       x: 60, y: 150, width: 420, height: 280, // matches 600x400 aspect ratio
-      content: { src: imgUrl, objectFit: 'cover' }
+      content: {
+        src: primaryUrl,
+        fallbackSrcs: fallbackUrls,
+        alt: imageTopic.value.trim() || 'AI generated image',
+        objectFit: 'cover',
+      }
     })
 
-    result.value = 'Image added to slide. It may take a few seconds to render.'
+    result.value = 'Image added to slide. It may take a few seconds to render, and will retry automatically if the first source fails.'
   } catch (error) {
     result.value = 'Could not insert the image right now. Try again in a moment.'
   } finally {
