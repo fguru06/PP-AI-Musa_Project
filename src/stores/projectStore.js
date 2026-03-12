@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid'
 import { useAuthStore } from './authStore'
 import { DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, normalizeCanvasSettings } from '@/lib/canvas'
 import { buildThemeChartContent } from '@/lib/chart'
+import { BUILT_IN_CONTENT_BLOCKS, normalizeContentBlock } from '@/lib/blockLibrary'
 
 let firestoreServicesPromise = null
 
@@ -85,6 +86,34 @@ function normalizeMotionPresets(presets) {
   }))
 }
 
+function normalizeContentBlocks(blocks) {
+  if (!Array.isArray(blocks) || !blocks.length) return []
+  return blocks.map((block, index) => normalizeContentBlock(block, block?.id || `custom-block-${index}`))
+}
+
+function getBlockBounds(elements) {
+  const normalized = Array.isArray(elements) ? elements : []
+  if (!normalized.length) {
+    return { minX: 0, minY: 0, width: 0, height: 0 }
+  }
+
+  const minX = Math.min(...normalized.map((element) => Number(element.x || 0)))
+  const minY = Math.min(...normalized.map((element) => Number(element.y || 0)))
+  const maxX = Math.max(...normalized.map((element) => Number(element.x || 0) + Number(element.width || 0)))
+  const maxY = Math.max(...normalized.map((element) => Number(element.y || 0) + Number(element.height || 0)))
+
+  return {
+    minX,
+    minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+  }
+}
+
+function getBuiltInContentBlocks() {
+  return BUILT_IN_CONTENT_BLOCKS.map((block) => normalizeContentBlock(block, block.id))
+}
+
 function makeBlankSlide(order = 0) {
   return {
     id: uuid(),
@@ -129,6 +158,7 @@ function makeNewProject(name = 'Untitled Project') {
       showNavControls: true,
       allowKeyboardNav: true,
       motionPresets: defaultMotionPresets(),
+      customBlocks: [],
     },
   }
 }
@@ -147,6 +177,7 @@ function makeElement(type, config = {}) {
     locked: false,
     visible: true,
     opacity: config.opacity ?? 1,
+    meta: { ...(config.meta || {}) },
     content: { ...(defaults.content || {}), ...(config.content || {}) },
     styles: { ...(defaults.styles || {}) },
     interactions: config.interactions || [],
@@ -374,6 +405,7 @@ function normalizeProject(project) {
       slideWidth: normalizedCanvas.slideWidth,
       slideHeight: normalizedCanvas.slideHeight,
       motionPresets: normalizeMotionPresets(project.settings?.motionPresets),
+      customBlocks: normalizeContentBlocks(project.settings?.customBlocks),
     },
   }
 }
@@ -614,6 +646,9 @@ export const useProjectStore = defineStore('projects', () => {
           ...patch.settings,
           ...normalizeCanvasSettings(patch.settings),
         }
+        if (Object.prototype.hasOwnProperty.call(patch.settings, 'customBlocks')) {
+          nextPatch.settings.customBlocks = normalizeContentBlocks(patch.settings.customBlocks)
+        }
       }
       projects.value[idx] = { ...projects.value[idx], ...nextPatch, updatedAt: Date.now() }
       persistProject(projects.value[idx])
@@ -796,6 +831,115 @@ export const useProjectStore = defineStore('projects', () => {
     persistProject(p)
   }
 
+  function getContentBlocks(projectId) {
+    const project = getProject(projectId)
+    const customBlocks = normalizeContentBlocks(project?.settings?.customBlocks)
+    return [...getBuiltInContentBlocks(), ...customBlocks]
+  }
+
+  function insertContentBlock(projectId, slideId, blockRef, options = {}) {
+    const project = getProject(projectId)
+    if (!project) return []
+
+    const slide = project.slides.find((item) => item.id === slideId)
+    if (!slide) return []
+
+    const block = typeof blockRef === 'string'
+      ? getContentBlocks(projectId).find((item) => item.id === blockRef)
+      : normalizeContentBlock(blockRef, blockRef?.id || uuid())
+
+    if (!block?.elements?.length) return []
+
+    const bounds = getBlockBounds(block.elements)
+    const canvasWidth = Number(project.settings?.slideWidth || DEFAULT_CANVAS_WIDTH)
+    const canvasHeight = Number(project.settings?.slideHeight || DEFAULT_CANVAS_HEIGHT)
+    const originX = Number.isFinite(Number(options.x))
+      ? Number(options.x)
+      : Math.max(24, Math.round((canvasWidth - bounds.width) / 2))
+    const originY = Number.isFinite(Number(options.y))
+      ? Number(options.y)
+      : Math.max(24, Math.round((canvasHeight - bounds.height) / 2))
+    const offsetX = originX - bounds.minX
+    const offsetY = originY - bounds.minY
+    const maxZ = slide.elements.reduce((highest, element) => Math.max(highest, Number(element.zIndex || 0)), 0)
+
+    const created = block.elements.map((element, index) => makeElement(element.type, {
+      ...JSON.parse(JSON.stringify(element)),
+      x: Number(element.x || 0) + offsetX,
+      y: Number(element.y || 0) + offsetY,
+      zIndex: maxZ + index + 1,
+      content: { ...(element.content || {}) },
+      styles: { ...(element.styles || {}) },
+      interactions: Array.isArray(element.interactions) ? element.interactions.map((interaction) => ({ ...interaction })) : [],
+      animations: Array.isArray(element.animations) ? element.animations.map((animation) => ({ ...animation })) : [],
+    }))
+
+    slide.elements.push(...created)
+    project.updatedAt = Date.now()
+    persistProject(project)
+    return created
+  }
+
+  function saveSelectionAsContentBlock(projectId, slideId, elementIds, blockMeta = {}) {
+    const project = getProject(projectId)
+    if (!project) return null
+
+    const slide = project.slides.find((item) => item.id === slideId)
+    if (!slide) return null
+
+    const ids = Array.isArray(elementIds) ? elementIds : []
+    const elements = ids
+      .map((id) => slide.elements.find((element) => element.id === id))
+      .filter(Boolean)
+      .sort((a, b) => Number(a.zIndex || 0) - Number(b.zIndex || 0))
+
+    if (!elements.length) return null
+
+    const bounds = getBlockBounds(elements)
+    const normalizedElements = elements.map((element, index) => {
+      const clone = JSON.parse(JSON.stringify(element))
+      delete clone.id
+      return {
+        ...clone,
+        x: Number(element.x || 0) - bounds.minX,
+        y: Number(element.y || 0) - bounds.minY,
+        zIndex: index + 1,
+      }
+    })
+
+    const nextBlock = normalizeContentBlock({
+      id: uuid(),
+      scope: 'custom',
+      name: blockMeta.name,
+      category: blockMeta.category || 'Custom',
+      description: blockMeta.description || '',
+      accent: blockMeta.accent || project.theme?.primaryColor || '#6c47ff',
+      tags: Array.isArray(blockMeta.tags) ? blockMeta.tags : [],
+      elements: normalizedElements,
+    })
+
+    updateProject(projectId, {
+      settings: {
+        ...project.settings,
+        customBlocks: [...normalizeContentBlocks(project.settings?.customBlocks), nextBlock],
+      },
+    })
+
+    return nextBlock
+  }
+
+  function deleteContentBlock(projectId, blockId) {
+    const project = getProject(projectId)
+    if (!project || !blockId) return
+
+    updateProject(projectId, {
+      settings: {
+        ...project.settings,
+        customBlocks: normalizeContentBlocks(project.settings?.customBlocks).filter((block) => block.id !== blockId),
+      },
+    })
+  }
+
   function exportProject(projectId) {
     const p = getProject(projectId)
     if (!p) return null
@@ -838,6 +982,10 @@ export const useProjectStore = defineStore('projects', () => {
     deleteElement,
     duplicateElement,
     reorderElement,
+    getContentBlocks,
+    insertContentBlock,
+    saveSelectionAsContentBlock,
+    deleteContentBlock,
     exportProject,
     importProject,
     makeBlankSlide,

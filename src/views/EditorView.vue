@@ -10,6 +10,7 @@ import { useKeyboardShortcuts } from '@/composables/useDrag'
 import { useDashboardAICreation } from '@/composables/useDashboardAICreation'
 
 import SlidePanel from '@/components/editor/SlidePanel.vue'
+import BlocksPanel from '@/components/editor/BlocksPanel.vue'
 import LayerPanel from '@/components/editor/LayerPanel.vue'
 import PropertiesPanel from '@/components/editor/PropertiesPanel.vue'
 import EditorToolbar from '@/components/editor/EditorToolbar.vue'
@@ -249,6 +250,7 @@ function openImagePicker() {
 
 const authoringOptions = [
   { id: 'text', label: 'Text' },
+  { id: 'blocks', label: 'Blocks' },
   { id: 'resources', label: 'Resources' },
   { id: 'interactive-elements', label: 'Interactive elements' },
   { id: 'interactive-questions', label: 'Interactive questions' },
@@ -262,6 +264,10 @@ const authoringOptions = [
 function handleAuthoringOption(id) {
   if (id === 'text') {
     editorStore.setActiveTool('text')
+    return
+  }
+  if (id === 'blocks') {
+    editorStore.openLeftPanel('blocks')
     return
   }
   if (id === 'resources') {
@@ -294,12 +300,13 @@ function handleAuthoringOption(id) {
     return
   }
   if (id === 'pages') {
-    editorStore.toggleSlidePanel()
+    editorStore.toggleSlidePanel('slides')
   }
 }
 
 function isAuthoringOptionActive(id) {
   if (id === 'text') return ['text', 'heading'].includes(editorStore.activeTool)
+  if (id === 'blocks') return editorStore.showSlidePanel && editorStore.leftPanelTab === 'blocks'
   if (id === 'resources') return editorStore.activeTool === 'image'
   if (id === 'interactive-elements') return ['hotspot', 'button'].includes(editorStore.activeTool)
   if (id === 'interactive-questions') return editorStore.activeTool === 'quiz'
@@ -444,6 +451,9 @@ watch(() => project.value, (newVal) => {
           data-tooltip-position="right"
         >
           <span v-if="item.id === 'text'" class="rail-icon">T</span>
+          <span v-else-if="item.id === 'blocks'" class="rail-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="5" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="11" width="8" height="9" rx="1.5"/></svg>
+          </span>
           <span v-else-if="item.id === 'resources'" class="rail-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           </span>
@@ -474,7 +484,11 @@ watch(() => project.value, (newVal) => {
 
       <!-- Left: Slides -->
       <Transition name="side-panel-slide">
-        <SlidePanel v-if="editorStore.showSlidePanel" />
+        <SlidePanel v-if="editorStore.showSlidePanel && editorStore.leftPanelTab === 'slides'" />
+      </Transition>
+
+      <Transition name="side-panel-slide">
+        <BlocksPanel v-if="editorStore.showSlidePanel && editorStore.leftPanelTab === 'blocks'" />
       </Transition>
 
       <!-- Center: Canvas -->

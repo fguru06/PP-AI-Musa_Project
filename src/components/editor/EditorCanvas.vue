@@ -3,6 +3,7 @@ import { computed, ref, provide, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset } from '@/lib/canvas'
+import { CONTENT_BLOCK_DRAG_MIME, getContentBlockBounds } from '@/lib/blockLibrary'
 import ElementWrapper from './ElementWrapper.vue'
 import TextElement from './elements/TextElement.vue'
 import ImageElement from './elements/ImageElement.vue'
@@ -166,6 +167,8 @@ const selectionStart = ref({ x: 0, y: 0 })
 const selectionCurrent = ref({ x: 0, y: 0 })
 const isSelecting = ref(false)
 const isImageDragOver = ref(false)
+const isBlockDragOver = ref(false)
+const blockDropPreview = ref(null)
 const canvasGuide = computed(() => {
   if (canvasPreset.value?.id === 'mobile') {
     return {
@@ -265,6 +268,58 @@ function hasImageFiles(dataTransfer) {
   return Array.from(dataTransfer.files || []).some(file => file.type.startsWith('image/'))
 }
 
+function hasBlockPayload(dataTransfer) {
+  if (!dataTransfer) return false
+  return Array.from(dataTransfer.types || []).includes(CONTENT_BLOCK_DRAG_MIME)
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getBlockDropOrigin(block, pointerX, pointerY) {
+  const bounds = getContentBlockBounds(block)
+  const originX = clamp(pointerX - (bounds.width / 2), 0, Math.max(0, canvasWidth.value - bounds.width))
+  const originY = clamp(pointerY - (bounds.height / 2), 0, Math.max(0, canvasHeight.value - bounds.height))
+
+  return {
+    x: originX,
+    y: originY,
+    bounds,
+  }
+}
+
+function resolveDraggedBlock(dataTransfer) {
+  if (!hasBlockPayload(dataTransfer)) return null
+
+  try {
+    const raw = dataTransfer.getData(CONTENT_BLOCK_DRAG_MIME)
+    const payload = raw ? JSON.parse(raw) : null
+    return payload?.id ? projectStore.getContentBlocks(editorStore.projectId).find((block) => block.id === payload.id) || null : null
+  } catch {
+    return null
+  }
+}
+
+function updateBlockDropPreview(clientX, clientY, block) {
+  if (!canvasRef.value || !block) {
+    blockDropPreview.value = null
+    return
+  }
+
+  const rect = canvasRef.value.getBoundingClientRect()
+  const pointerX = (clientX - rect.left) / interactionScale.value
+  const pointerY = (clientY - rect.top) / interactionScale.value
+  const origin = getBlockDropOrigin(block, pointerX, pointerY)
+
+  blockDropPreview.value = {
+    block,
+    x: origin.x,
+    y: origin.y,
+    bounds: origin.bounds,
+  }
+}
+
 function addDroppedImage(file, clientX, clientY) {
   if (!file || !file.type.startsWith('image/')) return
 
@@ -310,23 +365,129 @@ function addDroppedImage(file, clientX, clientY) {
 }
 
 function onCanvasDragOver(event) {
-  if (!hasImageFiles(event.dataTransfer)) return
+  const imageDrop = hasImageFiles(event.dataTransfer)
+  const blockDrop = hasBlockPayload(event.dataTransfer)
+  if (!imageDrop && !blockDrop) return
   event.preventDefault()
   event.dataTransfer.dropEffect = 'copy'
-  isImageDragOver.value = true
+  isImageDragOver.value = imageDrop
+  isBlockDragOver.value = blockDrop
+
+  if (blockDrop) {
+    updateBlockDropPreview(event.clientX, event.clientY, resolveDraggedBlock(event.dataTransfer))
+  }
 }
 
 function onCanvasDragLeave(event) {
   if (event.currentTarget?.contains(event.relatedTarget)) return
   isImageDragOver.value = false
+  isBlockDragOver.value = false
+  blockDropPreview.value = null
 }
 
 function onCanvasDropFile(event) {
-  if (!hasImageFiles(event.dataTransfer)) return
+  const imageDrop = hasImageFiles(event.dataTransfer)
+  const blockDrop = hasBlockPayload(event.dataTransfer)
+  if (!imageDrop && !blockDrop) return
   event.preventDefault()
   isImageDragOver.value = false
+  isBlockDragOver.value = false
+  blockDropPreview.value = null
+
+  if (blockDrop) {
+    try {
+      const block = resolveDraggedBlock(event.dataTransfer)
+      if (!block) return
+      const rect = canvasRef.value.getBoundingClientRect()
+      const pointerX = (event.clientX - rect.left) / interactionScale.value
+      const pointerY = (event.clientY - rect.top) / interactionScale.value
+      const origin = getBlockDropOrigin(block, pointerX, pointerY)
+      const created = projectStore.insertContentBlock(editorStore.projectId, editorStore.currentSlideId, block.id, { x: origin.x, y: origin.y })
+      if (created.length) {
+        editorStore.setSelection(created.map((element) => element.id))
+        editorStore.setActiveTool('select')
+        editorStore.focusPropertiesSection('content')
+      }
+    } catch (error) {
+      console.warn('Failed to drop block onto canvas.', error)
+    }
+    return
+  }
+
   const file = Array.from(event.dataTransfer.files || []).find(item => item.type.startsWith('image/'))
   if (file) addDroppedImage(file, event.clientX, event.clientY)
+}
+
+function applySelectionLayout(action) {
+  if (selectedElements.value.length < 2) return
+
+  const elements = [...selectedElements.value].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+  const left = Math.min(...elements.map((element) => Number(element.x || 0)))
+  const top = Math.min(...elements.map((element) => Number(element.y || 0)))
+  const right = Math.max(...elements.map((element) => Number(element.x || 0) + Number(element.width || 0)))
+  const bottom = Math.max(...elements.map((element) => Number(element.y || 0) + Number(element.height || 0)))
+  const centerX = left + ((right - left) / 2)
+  const centerY = top + ((bottom - top) / 2)
+
+  if (action === 'align-left') {
+    elements.forEach((element) => projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { x: left }, { persist: false }))
+  }
+
+  if (action === 'align-center') {
+    elements.forEach((element) => {
+      const width = Number(element.width || 0)
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { x: centerX - (width / 2) }, { persist: false })
+    })
+  }
+
+  if (action === 'align-right') {
+    elements.forEach((element) => {
+      const width = Number(element.width || 0)
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { x: right - width }, { persist: false })
+    })
+  }
+
+  if (action === 'align-top') {
+    elements.forEach((element) => projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { y: top }, { persist: false }))
+  }
+
+  if (action === 'align-middle') {
+    elements.forEach((element) => {
+      const height = Number(element.height || 0)
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { y: centerY - (height / 2) }, { persist: false })
+    })
+  }
+
+  if (action === 'align-bottom') {
+    elements.forEach((element) => {
+      const height = Number(element.height || 0)
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { y: bottom - height }, { persist: false })
+    })
+  }
+
+  if (action === 'distribute-horizontal') {
+    const ordered = [...elements].sort((a, b) => (a.x || 0) - (b.x || 0))
+    const totalWidth = ordered.reduce((sum, element) => sum + Number(element.width || 0), 0)
+    const gap = ordered.length > 1 ? ((right - left - totalWidth) / (ordered.length - 1)) : 0
+    let cursor = left
+    ordered.forEach((element) => {
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { x: cursor }, { persist: false })
+      cursor += Number(element.width || 0) + gap
+    })
+  }
+
+  if (action === 'distribute-vertical') {
+    const ordered = [...elements].sort((a, b) => (a.y || 0) - (b.y || 0))
+    const totalHeight = ordered.reduce((sum, element) => sum + Number(element.height || 0), 0)
+    const gap = ordered.length > 1 ? ((bottom - top - totalHeight) / (ordered.length - 1)) : 0
+    let cursor = top
+    ordered.forEach((element) => {
+      projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, element.id, { y: cursor }, { persist: false })
+      cursor += Number(element.height || 0) + gap
+    })
+  }
+
+  projectStore.commitProject(editorStore.projectId)
 }
 
 // Click/drop to add new element or start select marquee
@@ -561,6 +722,43 @@ function goNextSlide() {
             <span>{{ canvasGuideWarning }}</span>
           </div>
 
+          <div
+            v-if="blockDropPreview"
+            class="block-drop-preview"
+            :style="{
+              left: `${blockDropPreview.x}px`,
+              top: `${blockDropPreview.y}px`,
+              width: `${blockDropPreview.bounds.width}px`,
+              height: `${blockDropPreview.bounds.height}px`,
+            }"
+          >
+            <div
+              v-for="(element, index) in blockDropPreview.block.elements"
+              :key="`${blockDropPreview.block.id}-preview-${index}`"
+              class="block-drop-preview-el"
+              :class="`block-drop-preview-${element.type}`"
+              :style="{
+                left: `${Number(element.x || 0) - blockDropPreview.bounds.minX}px`,
+                top: `${Number(element.y || 0) - blockDropPreview.bounds.minY}px`,
+                width: `${Number(element.width || 0)}px`,
+                height: `${Number(element.height || 0)}px`,
+                borderRadius: element.type === 'shape' && element.content?.shapeType === 'circle' ? '50%' : `${Number(element.content?.borderRadius || 12)}px`,
+                background: element.type === 'shape'
+                  ? (element.content?.fillColor || 'rgba(108,71,255,.18)')
+                  : element.type === 'button'
+                    ? (element.content?.bgColor || 'rgba(108,71,255,.32)')
+                    : ['text', 'heading'].includes(element.type)
+                      ? 'transparent'
+                      : 'rgba(148,163,184,.18)',
+              }"
+            >
+              <template v-if="['text', 'heading'].includes(element.type)">
+                <span class="block-drop-preview-line"></span>
+                <span class="block-drop-preview-line short"></span>
+              </template>
+            </div>
+          </div>
+
           <!-- Elements -->
           <ElementWrapper
             v-for="el in sortedElements"
@@ -590,9 +788,9 @@ function goNextSlide() {
 
           <!-- Drop hint when tool is active -->
           <div
-            v-if="editorStore.activeTool !== 'select' || isImageDragOver"
+            v-if="editorStore.activeTool !== 'select' || isImageDragOver || isBlockDragOver"
             class="drop-hint"
-          >{{ isImageDragOver ? 'Drop image to insert it on this slide' : `Click anywhere to add ${editorStore.activeTool}` }}</div>
+          >{{ isBlockDragOver ? 'Drop block to insert it here' : isImageDragOver ? 'Drop image to insert it on this slide' : `Click anywhere to add ${editorStore.activeTool}` }}</div>
           
           <!-- Selection Marquee -->
           <div
@@ -620,6 +818,16 @@ function goNextSlide() {
         <span>·</span>
         <span :class="['playback-badge', `playback-badge-${playbackBadge.tone}`]">{{ playbackBadge.label }}</span>
         <span v-if="editorStore.hasSelection">· {{ editorStore.selectedElementIds.length }} selected</span>
+        <template v-if="editorStore.multiSelection">
+          <button class="bar-btn" @click="applySelectionLayout('align-left')">Left</button>
+          <button class="bar-btn" @click="applySelectionLayout('align-center')">Center</button>
+          <button class="bar-btn" @click="applySelectionLayout('align-right')">Right</button>
+          <button class="bar-btn" @click="applySelectionLayout('align-top')">Top</button>
+          <button class="bar-btn" @click="applySelectionLayout('align-middle')">Middle</button>
+          <button class="bar-btn" @click="applySelectionLayout('align-bottom')">Bottom</button>
+          <button class="bar-btn" @click="applySelectionLayout('distribute-horizontal')">Space H</button>
+          <button class="bar-btn" @click="applySelectionLayout('distribute-vertical')">Space V</button>
+        </template>
         <button class="bar-btn ai" @click="editorStore.setRightPanel('ai')">AI</button>
       </div>
     </template>
@@ -798,6 +1006,43 @@ function goNextSlide() {
 }
 .selection-preset-apply:hover {
   background: rgba(108,71,255,.28);
+}
+.block-drop-preview {
+  position: absolute;
+  pointer-events: none;
+  z-index: 18;
+  border: 2px dashed rgba(108, 71, 255, 0.48);
+  background: rgba(108, 71, 255, 0.06);
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgba(108, 71, 255, 0.16);
+}
+.block-drop-preview-el {
+  position: absolute;
+  overflow: hidden;
+  opacity: 0.72;
+  border: 1px solid rgba(108, 71, 255, 0.18);
+}
+.block-drop-preview-text,
+.block-drop-preview-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  padding: 6px 8px;
+  border: none;
+}
+.block-drop-preview-line {
+  display: block;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.24);
+}
+.block-drop-preview-heading .block-drop-preview-line {
+  height: 16px;
+  background: rgba(15, 23, 42, 0.34);
+}
+.block-drop-preview-line.short {
+  width: 68%;
 }
 .canvas-info-bar {
   position: absolute;

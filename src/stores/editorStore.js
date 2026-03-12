@@ -12,7 +12,7 @@ export const useEditorStore = defineStore('editor', () => {
   const activeTool = ref('select') // 'select' | 'text' | 'heading' | 'image' | 'shape' | 'button' | 'hotspot' | 'video' | 'audio' | 'quiz' | 'chart'
   const activeShape = ref('rectangle') // for shape tool
   const rightPanelTab = ref('properties') // 'properties' | 'layers' | 'ai' | 'theme'
-  const leftPanelTab = ref('slides') // 'slides'
+  const leftPanelTab = ref('slides') // 'slides' | 'blocks'
   const propertiesPanelSection = ref('')
   const aiPanelMode = ref('generate')
 
@@ -99,6 +99,11 @@ export const useEditorStore = defineStore('editor', () => {
     rightPanelTab.value = tab
   }
 
+  function openLeftPanel(tab = 'slides') {
+    leftPanelTab.value = tab
+    showSlidePanel.value = true
+  }
+
   function focusPropertiesSection(section = 'geometry') {
     rightPanelTab.value = 'properties'
     propertiesPanelSection.value = section
@@ -120,7 +125,15 @@ export const useEditorStore = defineStore('editor', () => {
 
   function toggleGrid() { showGrid.value = !showGrid.value }
   function toggleSnap() { snapToGrid.value = !snapToGrid.value }
-  function toggleSlidePanel() { showSlidePanel.value = !showSlidePanel.value }
+  function toggleSlidePanel(tab = leftPanelTab.value || 'slides') {
+    if (showSlidePanel.value && leftPanelTab.value === tab) {
+      showSlidePanel.value = false
+      return
+    }
+
+    leftPanelTab.value = tab
+    showSlidePanel.value = true
+  }
 
   function pushHistory(snapshot) {
     // Trim future
@@ -168,7 +181,7 @@ export const useEditorStore = defineStore('editor', () => {
     clipboard, isDragging, isResizing, resizeHandle, panX, panY,
     hasSelection, multiSelection,
     setProject, setCurrentSlide, selectElement, setSelection, clearSelection,
-    setActiveTool, setRightPanel, focusPropertiesSection, openAIPanel, setZoom, zoomIn, zoomOut, zoomReset,
+    setActiveTool, setRightPanel, openLeftPanel, focusPropertiesSection, openAIPanel, setZoom, zoomIn, zoomOut, zoomReset,
     toggleGrid, toggleSnap, toggleSlidePanel, pushHistory, canUndo, canRedo, undo, redo,
     setClipboard,
   }
