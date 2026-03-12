@@ -114,6 +114,46 @@ function getBuiltInContentBlocks() {
   return BUILT_IN_CONTENT_BLOCKS.map((block) => normalizeContentBlock(block, block.id))
 }
 
+function getBindableContentEntries(element) {
+  if (!element?.content) return []
+
+  if (element.type === 'text' || element.type === 'heading') {
+    return typeof element.content.text === 'string' && element.content.text.trim()
+      ? [{ contentKey: 'text', kind: element.type === 'heading' ? 'Heading' : 'Text', defaultValue: element.content.text }]
+      : []
+  }
+
+  if (element.type === 'button') {
+    return typeof element.content.label === 'string' && element.content.label.trim()
+      ? [{ contentKey: 'label', kind: 'Button', defaultValue: element.content.label }]
+      : []
+  }
+
+  return []
+}
+
+function buildSelectionBlockBindings(elements) {
+  const counters = new Map()
+  const bindings = []
+
+  elements.forEach((element, elementIndex) => {
+    getBindableContentEntries(element).forEach((entry) => {
+      const nextCount = (counters.get(entry.kind) || 0) + 1
+      counters.set(entry.kind, nextCount)
+      const preview = String(entry.defaultValue || '').trim().split('\n')[0].slice(0, 28)
+      bindings.push({
+        id: `${entry.kind.toLowerCase()}-${nextCount}`,
+        label: preview || `${entry.kind} ${nextCount}`,
+        defaultValue: String(entry.defaultValue || ''),
+        elementIndex,
+        contentKey: entry.contentKey,
+      })
+    })
+  })
+
+  return bindings
+}
+
 function makeBlankSlide(order = 0) {
   return {
     id: uuid(),
@@ -874,6 +914,24 @@ export const useProjectStore = defineStore('projects', () => {
       animations: Array.isArray(element.animations) ? element.animations.map((animation) => ({ ...animation })) : [],
     }))
 
+    const bindingValues = options?.bindingValues && typeof options.bindingValues === 'object'
+      ? options.bindingValues
+      : {}
+
+    ;(block.bindings || []).forEach((binding) => {
+      const target = created[Number(binding.elementIndex || 0)]
+      if (!target?.content || !binding?.contentKey) return
+
+      const nextValue = Object.prototype.hasOwnProperty.call(bindingValues, binding.id)
+        ? bindingValues[binding.id]
+        : binding.defaultValue
+
+      target.content = {
+        ...target.content,
+        [binding.contentKey]: String(nextValue ?? ''),
+      }
+    })
+
     slide.elements.push(...created)
     project.updatedAt = Date.now()
     persistProject(project)
@@ -915,6 +973,7 @@ export const useProjectStore = defineStore('projects', () => {
       description: blockMeta.description || '',
       accent: blockMeta.accent || project.theme?.primaryColor || '#6c47ff',
       tags: Array.isArray(blockMeta.tags) ? blockMeta.tags : [],
+      bindings: Array.isArray(blockMeta.bindings) ? blockMeta.bindings : buildSelectionBlockBindings(normalizedElements),
       elements: normalizedElements,
     })
 

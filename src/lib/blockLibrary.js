@@ -258,6 +258,16 @@ export function normalizeContentBlock(block, fallbackId) {
     tags: Array.isArray(block?.tags)
       ? block.tags.map((tag) => String(tag).trim()).filter(Boolean)
       : [],
+    bindings: Array.isArray(block?.bindings)
+      ? block.bindings
+          .map((binding, index) => ({
+            id: String(binding?.id || `binding-${index + 1}`),
+            label: String(binding?.label || `Field ${index + 1}`).trim() || `Field ${index + 1}`,
+            defaultValue: String(binding?.defaultValue ?? ''),
+            elementIndex: Math.max(0, Number(binding?.elementIndex) || 0),
+            contentKey: String(binding?.contentKey || 'text').trim() || 'text',
+          }))
+      : [],
     elements: Array.isArray(block?.elements)
       ? block.elements.map((element) => ({
           ...element,

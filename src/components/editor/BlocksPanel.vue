@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import Modal from '@/components/common/Modal.vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { CONTENT_BLOCK_DRAG_MIME } from '@/lib/blockLibrary'
@@ -11,6 +12,9 @@ const searchQuery = ref('')
 const activeCategory = ref('all')
 const customBlockName = ref('')
 const customBlockCategory = ref('Custom')
+const showBindingModal = ref(false)
+const pendingInsertBlock = ref(null)
+const pendingBindingValues = ref({})
 
 const project = computed(() => projectStore.getProject(editorStore.projectId))
 const slide = computed(() => project.value?.slides?.find((item) => item.id === editorStore.currentSlideId))
@@ -24,6 +28,7 @@ const selectedElements = computed(() => {
   const ids = new Set(editorStore.selectedElementIds)
   return (slide.value?.elements || []).filter((element) => ids.has(element.id))
 })
+const pendingBindings = computed(() => Array.isArray(pendingInsertBlock.value?.bindings) ? pendingInsertBlock.value.bindings : [])
 const filteredBlocks = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
@@ -117,13 +122,46 @@ function getTextLineStyle(element, lineIndex) {
   }
 }
 
-function insertBlock(block) {
-  const created = projectStore.insertContentBlock(editorStore.projectId, editorStore.currentSlideId, block.id)
+function handleInsertedBlock(created) {
   if (created.length) {
     editorStore.setSelection(created.map((element) => element.id))
     editorStore.focusPropertiesSection('content')
     editorStore.setActiveTool('select')
   }
+}
+
+function hasBindings(block) {
+  return Array.isArray(block?.bindings) && block.bindings.length > 0
+}
+
+function closeBindingModal() {
+  showBindingModal.value = false
+  pendingInsertBlock.value = null
+  pendingBindingValues.value = {}
+}
+
+function insertBlock(block, bindingValues = null) {
+  const created = projectStore.insertContentBlock(editorStore.projectId, editorStore.currentSlideId, block.id, bindingValues ? { bindingValues } : {})
+  handleInsertedBlock(created)
+}
+
+function startInsertBlock(block) {
+  if (!hasBindings(block)) {
+    insertBlock(block)
+    return
+  }
+
+  pendingInsertBlock.value = block
+  pendingBindingValues.value = Object.fromEntries(
+    block.bindings.map((binding) => [binding.id, binding.defaultValue || ''])
+  )
+  showBindingModal.value = true
+}
+
+function confirmInsertWithBindings() {
+  if (!pendingInsertBlock.value) return
+  insertBlock(pendingInsertBlock.value, { ...pendingBindingValues.value })
+  closeBindingModal()
 }
 
 function saveSelectionAsBlock() {
@@ -187,7 +225,7 @@ function onBlockDragStart(event, block) {
     <div class="blocks-panel-body">
       <div class="blocks-save-card">
         <div class="blocks-save-title">Save Selection</div>
-        <div class="field-hint">Turn the current selection into a reusable block for this project.</div>
+        <div class="field-hint">Turn the current selection into a reusable block for this project. Text and button labels become editable placeholders.</div>
         <input v-model="customBlockName" class="input" placeholder="e.g. Product intro banner" />
         <input v-model="customBlockCategory" class="input" placeholder="Category" />
         <button
@@ -235,7 +273,9 @@ function onBlockDragStart(event, block) {
             <div class="block-card-head">
               <div>
                 <div class="block-name">{{ block.name }}</div>
-                <div class="block-meta">{{ block.category }}<span v-if="block.scope === 'custom'"> · Custom</span></div>
+                <div class="block-meta">
+                  {{ block.category }}<span v-if="block.scope === 'custom'"> · Custom</span><span v-if="hasBindings(block)"> · {{ block.bindings.length }} field{{ block.bindings.length > 1 ? 's' : '' }}</span>
+                </div>
               </div>
               <button
                 v-if="block.scope === 'custom'"
@@ -253,16 +293,37 @@ function onBlockDragStart(event, block) {
               </button>
             </div>
             <p class="block-description">{{ block.description || 'Reusable layout block' }}</p>
+            <div v-if="hasBindings(block)" class="block-binding-note">Editable placeholders included</div>
             <div class="block-tags">
               <span v-for="tag in block.tags || []" :key="`${block.id}-${tag}`" class="block-tag">#{{ tag }}</span>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm w-full" @click="insertBlock(block)">
-              Insert Block
+            <button type="button" class="btn btn-secondary btn-sm w-full" @click="startInsertBlock(block)">
+              {{ hasBindings(block) ? 'Insert with Fields' : 'Insert Block' }}
             </button>
           </div>
         </div>
       </div>
     </div>
+
+    <Modal v-if="showBindingModal" title="Fill Template Fields" size="md" @close="closeBindingModal">
+      <div class="binding-modal-body">
+        <p class="binding-modal-intro">
+          Customize the placeholder text before inserting <strong>{{ pendingInsertBlock?.name }}</strong>.
+        </p>
+        <div v-for="binding in pendingBindings" :key="binding.id" class="binding-field">
+          <label class="form-label" :for="`binding-${binding.id}`">{{ binding.label }}</label>
+          <textarea
+            :id="`binding-${binding.id}`"
+            v-model="pendingBindingValues[binding.id]"
+            class="textarea binding-input"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-ghost" @click="closeBindingModal">Cancel</button>
+        <button type="button" class="btn btn-primary" @click="confirmInsertWithBindings">Insert Block</button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -357,6 +418,12 @@ function onBlockDragStart(event, block) {
   color: var(--color-text);
 }
 
+.block-binding-note {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
 .blocks-list {
   display: flex;
   flex-direction: column;
@@ -413,6 +480,30 @@ function onBlockDragStart(event, block) {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.binding-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.binding-modal-intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.binding-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.binding-input {
+  min-height: 74px;
+  resize: vertical;
 }
 
 .block-card-head {
