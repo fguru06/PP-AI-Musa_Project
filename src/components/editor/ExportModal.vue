@@ -44,7 +44,7 @@ function sanitizeExportName(name, fallback = 'presentation') {
   return value.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim() || fallback
 }
 
-function buildRuntimeCSS(theme, settings) {
+function buildRuntimeCSS(theme, settings, mode = 'html') {
   const canvasSize = getProjectCanvasSize(settings)
   return `
 *, *::before, *::after { box-sizing: border-box; }
@@ -577,7 +577,7 @@ body {
 `
 }
 
-function buildRuntimeJS() {
+function buildRuntimeJS(mode = 'html') {
   return `
 (function () {
   var dataNode = document.getElementById('lf-data');
@@ -1569,7 +1569,11 @@ function buildRuntimeJS() {
 `
 }
 
-async function exportHTML() {
+async function exportHTML() { return doExportWeb('html') }
+async function exportIframe() { return doExportWeb('iframe') }
+async function exportPDF() { return doExportWeb('pdf') }
+
+async function doExportWeb(mode = 'html') {
   const p = project.value
   if (!p) return
   exportStatus.value = 'processing'
@@ -1649,8 +1653,8 @@ async function exportHTML() {
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')
 
-  const css = buildRuntimeCSS(p.theme, p.settings)
-  const js = buildRuntimeJS()
+  const css = buildRuntimeCSS(p.theme, p.settings, mode)
+  const js = buildRuntimeJS(mode)
   const dataScriptTag = '<' + `script id="lf-data" type="application/json">${projectData}</` + 'script>'
   const runtimeScriptTag = '<' + 'script src="script.js"></' + 'script>'
 
@@ -1660,9 +1664,9 @@ async function exportHTML() {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${exportName}</title>
-<link rel="stylesheet" href="style.css">
+${mode !== 'pdf' ? `${mode !== 'pdf' ? `<link rel="stylesheet" href="style.css">` : `<style>${css}</style>`}` : `<style>${css}</style>`}
 </head>
-<body>
+<body class="${mode === 'iframe' ? 'is-iframe' : mode === 'pdf' ? 'is-pdf' : ''}">
 <div class="lf-shell">
 <div class="progress" id="progress"></div>
 <div class="lf-grid"></div>
@@ -1677,7 +1681,7 @@ async function exportHTML() {
 </nav>
 </div>
 ${dataScriptTag}
-${runtimeScriptTag}
+${mode !== 'pdf' ? runtimeScriptTag : `<script>${js}<\/script>`}
 </body>
 </html>`
 
@@ -1720,9 +1724,11 @@ ${runtimeScriptTag}
     </template>
 
     <template v-else>
-      <div class="export-tabs tabs">
-        <button :class="['tab-btn', activeTab === 'json' && 'active']" @click="activeTab = 'json'">JSON Project</button>
-        <button :class="['tab-btn', activeTab === 'html' && 'active']" @click="activeTab = 'html'">HTML Package</button>
+      <div class="export-tabs tabs" style="overflow-x: auto;">
+        <button :class="['tab-btn', activeTab === 'json' && 'active']" @click="activeTab = 'json'">JSON</button>
+        <button :class="['tab-btn', activeTab === 'html' && 'active']" @click="activeTab = 'html'">HTML</button>
+        <button :class="['tab-btn', activeTab === 'iframe' && 'active']" @click="activeTab = 'iframe'">Iframe</button>
+        <button :class="['tab-btn', activeTab === 'pdf' && 'active']" @click="activeTab = 'pdf'">PDF</button>
         <button :class="['tab-btn', activeTab === 'scorm' && 'active']" @click="activeTab = 'scorm'">SCORM</button>
       </div>
 
@@ -1792,6 +1798,50 @@ ${runtimeScriptTag}
           Download HTML
         </button>
       </template>
+
+        <!-- Iframe Export -->
+        <template v-else-if="activeTab === 'iframe'">
+          <div class="export-info">
+            <div class="export-icon">???</div>
+            <div>
+              <h4>Iframe Package</h4>
+              <p>Export a lightweight package optimized for embedding in other sites via an iframe. Strips out outer backgrounds and fits precisely.</p>
+            </div>
+          </div>
+          <div class="export-options" style="margin-bottom: 20px;">
+            <div class="form-group">
+              <label style="display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#333;">Package Name</label>
+              <input type="text" v-model="exportFileName" class="inp" placeholder="My Presentation" style="width:100%;padding:8px;border-radius:6px;border:1px solid #ddd;" />
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer;">
+              <input type="checkbox" v-model="exportIncludeAssets" /> Download external assets locally
+            </label>
+          </div>
+          <button class="btn btn-primary export-btn" @click="exportIframe">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Iframe Zip
+          </button>
+        </template>
+
+        <!-- PDF Export -->
+        <template v-else-if="activeTab === 'pdf'">
+          <div class="export-info">
+            <div class="export-icon">??</div>
+            <div>
+              <h4>PDF Document</h4>
+              <p>Generate a printable, static PDF version of all slides. Converts perfectly to a standard presentation handout.</p>
+            </div>
+          </div>
+          <p style="margin-bottom: 20px; font-size: 13px; color: #666;">This will open the presentation in a new printable window. Just use your browser's Print dialog and select "Save as PDF".</p>
+          <button class="btn btn-primary export-btn" @click="exportPDF">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Generate PDF
+          </button>
+        </template>
 
       <!-- SCORM -->
       <template v-else-if="activeTab === 'scorm'">
