@@ -3,6 +3,218 @@ import { ref, computed, watch } from 'vue'
 import { useAIStore } from '@/stores/aiStore'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
+import { BUILT_IN_CONTENT_BLOCKS, getContentBlockBounds, normalizeContentBlock } from '@/lib/blockLibrary'
+
+const CONTENT_LAYOUT_OPTIONS = [
+  {
+    id: 'classic',
+    label: 'Classic',
+    hint: 'Title, bullets, and a takeaway.',
+    promptHint: 'Use a standard explanatory slide with a title, optional subtitle, 3-5 bullets, and one strong takeaway.',
+    schema: '{ "layout": "classic", "title": "...", "subtitle": "...", "bullets": ["..."], "callout": "..." }',
+  },
+  {
+    id: 'cards',
+    label: 'Cards',
+    hint: 'Three concept or benefit cards.',
+    promptHint: 'Structure the content as three distinct cards with a short title and supporting sentence for each.',
+    schema: '{ "layout": "cards", "title": "...", "subtitle": "...", "callout": "...", "cards": [{ "title": "...", "body": "..." }, { "title": "...", "body": "..." }, { "title": "...", "body": "..." }] }',
+  },
+  {
+    id: 'comparison',
+    label: 'Comparison',
+    hint: 'Side-by-side before/after or option A/B.',
+    promptHint: 'Create a two-column comparison with clear labels and 2-3 points on each side.',
+    schema: '{ "layout": "comparison", "title": "...", "subtitle": "...", "callout": "...", "comparison": { "leftTitle": "...", "leftPoints": ["..."], "rightTitle": "...", "rightPoints": ["..."] } }',
+  },
+  {
+    id: 'metrics',
+    label: 'Metrics',
+    hint: 'Three KPI-style highlights.',
+    promptHint: 'Return three concise, presentation-ready metrics with realistic values and short labels.',
+    schema: '{ "layout": "metrics", "title": "...", "subtitle": "...", "callout": "...", "metrics": [{ "value": "92%", "label": "..." }, { "value": "3.4x", "label": "..." }, { "value": "14d", "label": "..." }] }',
+  },
+  {
+    id: 'timeline',
+    label: 'Timeline',
+    hint: 'Four-step milestone story.',
+    promptHint: 'Turn the topic into four clear milestones that progress from start to finish.',
+    schema: '{ "layout": "timeline", "title": "...", "subtitle": "...", "callout": "...", "timeline": [{ "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }] }',
+  },
+  {
+    id: 'faq',
+    label: 'FAQ',
+    hint: 'Three audience questions and answers.',
+    promptHint: 'Return three strong audience questions, each with a concise useful answer.',
+    schema: '{ "layout": "faq", "title": "...", "subtitle": "...", "callout": "...", "faqs": [{ "question": "...", "answer": "..." }, { "question": "...", "answer": "..." }, { "question": "...", "answer": "..." }] }',
+  },
+  {
+    id: 'process',
+    label: 'Process',
+    hint: 'Three practical steps.',
+    promptHint: 'Break the topic into three clear steps with actionable descriptions.',
+    schema: '{ "layout": "process", "title": "...", "subtitle": "...", "callout": "...", "process": [{ "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }] }',
+  },
+]
+
+const CONTENT_LAYOUT_BLOCKS = {
+  cards: 'three-card-grid',
+  comparison: 'comparison-columns',
+  metrics: 'metric-strip',
+  timeline: 'timeline-ribbon',
+  faq: 'faq-stack',
+  process: 'process-ladder',
+}
+
+function normalizeLayoutId(value, fallback = 'classic') {
+  const normalized = String(value || fallback || 'classic').trim().toLowerCase()
+  return CONTENT_LAYOUT_OPTIONS.some((option) => option.id === normalized) ? normalized : fallback
+}
+
+function cleanText(value, fallback = '') {
+  const text = String(value ?? fallback).replace(/^\s*[-•]\s*/, '').trim()
+  return text || fallback
+}
+
+function normalizeTextList(value) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split('\n')
+      : []
+
+  return list
+    .map((item) => cleanText(item))
+    .filter(Boolean)
+}
+
+function fillToCount(items, count, factory) {
+  const next = [...items]
+  while (next.length < count) next.push(factory(next.length))
+  return next.slice(0, count)
+}
+
+function normalizeCards(cards, bullets) {
+  const normalized = Array.isArray(cards)
+    ? cards
+        .map((card, index) => ({
+          title: cleanText(card?.title, `Card ${index + 1}`),
+          body: cleanText(card?.body || card?.text || card?.description, 'Add supporting detail.'),
+        }))
+        .filter((card) => card.title || card.body)
+    : []
+
+  const fallback = bullets.map((bullet, index) => ({
+    title: `Point ${index + 1}`,
+    body: bullet,
+  }))
+
+  return fillToCount(normalized.length ? normalized : fallback, 3, (index) => ({
+    title: `Point ${index + 1}`,
+    body: 'Add supporting detail.',
+  }))
+}
+
+function normalizeComparison(comparison, bullets) {
+  const leftPoints = normalizeTextList(comparison?.leftPoints)
+  const rightPoints = normalizeTextList(comparison?.rightPoints)
+  const fallbackLeft = bullets.slice(0, Math.max(1, Math.ceil(bullets.length / 2)))
+  const fallbackRight = bullets.slice(Math.max(1, Math.ceil(bullets.length / 2)))
+
+  return {
+    leftTitle: cleanText(comparison?.leftTitle, 'Option A'),
+    leftPoints: fillToCount(leftPoints.length ? leftPoints : fallbackLeft, 3, (index) => `Left point ${index + 1}`),
+    rightTitle: cleanText(comparison?.rightTitle, 'Option B'),
+    rightPoints: fillToCount(rightPoints.length ? rightPoints : fallbackRight, 3, (index) => `Right point ${index + 1}`),
+  }
+}
+
+function normalizeMetrics(metrics, bullets) {
+  const parsed = Array.isArray(metrics)
+    ? metrics
+        .map((metric, index) => ({
+          value: cleanText(metric?.value, `${index + 1}`),
+          label: cleanText(metric?.label, `Metric ${index + 1}`),
+        }))
+        .filter((metric) => metric.value || metric.label)
+    : []
+
+  const fallback = bullets.map((bullet, index) => {
+    const [valuePart, ...labelParts] = bullet.split(/[:\-]/)
+    return {
+      value: cleanText(valuePart, `${index + 1}`),
+      label: cleanText(labelParts.join(' ').trim(), bullet),
+    }
+  })
+
+  return fillToCount(parsed.length ? parsed : fallback, 3, (index) => ({
+    value: `${index + 1}`,
+    label: `Metric ${index + 1}`,
+  }))
+}
+
+function normalizeTimeline(timeline, bullets) {
+  const parsed = Array.isArray(timeline)
+    ? timeline
+        .map((item, index) => ({
+          title: cleanText(item?.title, `Phase ${index + 1}`),
+          detail: cleanText(item?.detail || item?.description, 'Explain the milestone.'),
+        }))
+        .filter((item) => item.title || item.detail)
+    : []
+
+  const fallback = bullets.map((bullet, index) => ({
+    title: `Phase ${index + 1}`,
+    detail: bullet,
+  }))
+
+  return fillToCount(parsed.length ? parsed : fallback, 4, (index) => ({
+    title: `Phase ${index + 1}`,
+    detail: 'Explain the milestone.',
+  }))
+}
+
+function normalizeFaqs(faqs, bullets) {
+  const parsed = Array.isArray(faqs)
+    ? faqs
+        .map((item, index) => ({
+          question: cleanText(item?.question, `Question ${index + 1}?`),
+          answer: cleanText(item?.answer, 'Add the short answer here.'),
+        }))
+        .filter((item) => item.question || item.answer)
+    : []
+
+  const fallback = bullets.map((bullet, index) => ({
+    question: `Question ${index + 1}?`,
+    answer: bullet,
+  }))
+
+  return fillToCount(parsed.length ? parsed : fallback, 3, (index) => ({
+    question: `Question ${index + 1}?`,
+    answer: 'Add the short answer here.',
+  }))
+}
+
+function normalizeProcess(process, bullets) {
+  const parsed = Array.isArray(process)
+    ? process
+        .map((item, index) => ({
+          title: cleanText(item?.title, `Step ${index + 1}`),
+          detail: cleanText(item?.detail || item?.description, 'Add the step detail here.'),
+        }))
+        .filter((item) => item.title || item.detail)
+    : []
+
+  const fallback = bullets.map((bullet, index) => ({
+    title: `Step ${index + 1}`,
+    detail: bullet,
+  }))
+
+  return fillToCount(parsed.length ? parsed : fallback, 3, (index) => ({
+    title: `Step ${index + 1}`,
+    detail: 'Add the step detail here.',
+  }))
+}
 
 const aiStore = useAIStore()
 const editorStore = useEditorStore()
@@ -32,10 +244,14 @@ const contentDescription = ref('')
 const contentCustomPrompt = ref('')
 const contentPromptUserEdited = ref(false)
 const contentGenerationMode = ref('single') // 'single' | 'deck'
+const contentLayoutMode = ref('classic')
 const deckSlideCount = ref(5)
 const contentOutputMode = ref('slide') // 'slide' | 'options'
 const creativeOptions = ref([])
 const creativeOptionsError = ref('')
+const selectedContentLayout = computed(() =>
+  CONTENT_LAYOUT_OPTIONS.find((option) => option.id === contentLayoutMode.value) || CONTENT_LAYOUT_OPTIONS[0]
+)
 
 const contentAutoPrompt = computed(() => {
   const t = topic.value.trim() || '[your topic]'
@@ -57,7 +273,10 @@ const contentAutoPrompt = computed(() => {
   }[slideType.value] || 'educational slide'
   let p = `Create a ${typeGuide} about "${t}".`
   if (contentDescription.value.trim()) p += `\nAdditional context: ${contentDescription.value.trim()}`
-  p += `\nReturn ONLY valid JSON: { "title": "...", "subtitle": "...", "bullets": ["..."], "callout": "..." }\nMake all content specific to "${t}" — no generic placeholders.`
+  p += `\nLayout mode: ${contentLayoutMode.value}`
+  p += `\nLayout instruction: ${selectedContentLayout.value.promptHint}`
+  p += `\nReturn ONLY valid JSON matching this shape: ${selectedContentLayout.value.schema}`
+  p += `\nMake all content specific to "${t}" — no generic placeholders.`
   return p
 })
 
@@ -135,6 +354,7 @@ async function generateSlide() {
     slideType.value,
     contentDescription.value,
     contentCustomPrompt.value,
+    { layoutMode: contentLayoutMode.value },
   )
   if (content) {
     const normalized = normalizeSlideContent(content)
@@ -145,21 +365,21 @@ async function generateSlide() {
 
 function normalizeSlideContent(content) {
   const parsed = content && typeof content === 'object' ? content : {}
-  const rawBullets = Array.isArray(parsed.bullets)
-    ? parsed.bullets
-    : typeof parsed.bullets === 'string'
-      ? parsed.bullets.split('\n')
-      : []
-
-  const bullets = rawBullets
-    .map(item => String(item || '').replace(/^\s*[-•]\s*/, '').trim())
-    .filter(Boolean)
+  const bullets = normalizeTextList(parsed.bullets)
+  const layout = normalizeLayoutId(parsed.layout || parsed.design?.layout, contentLayoutMode.value)
 
   return {
     title: String(parsed.title || topic.value || 'Untitled Slide').trim(),
     subtitle: String(parsed.subtitle || '').trim(),
     bullets,
     callout: String(parsed.callout || '').trim(),
+    layout,
+    cards: normalizeCards(parsed.cards, bullets),
+    comparison: normalizeComparison(parsed.comparison, bullets),
+    metrics: normalizeMetrics(parsed.metrics, bullets),
+    timeline: normalizeTimeline(parsed.timeline, bullets),
+    faqs: normalizeFaqs(parsed.faqs, bullets),
+    process: normalizeProcess(parsed.process, bullets),
   }
 }
 
@@ -183,13 +403,188 @@ function addGeneratedElement(projectId, slideId, type, element) {
   })
 }
 
-function applyNormalizedContentToSlide(projectId, slideId, normalized, { replaceGenerated = false } = {}) {
-  if (!projectId || !slideId) return
+function cloneBuiltInBlock(blockId) {
+  const source = BUILT_IN_CONTENT_BLOCKS.find((block) => block.id === blockId)
+  if (!source) return null
+  const block = normalizeContentBlock(JSON.parse(JSON.stringify(source)), blockId)
+  block.elements = block.elements.map((element) => ({
+    ...element,
+    meta: { ...(element.meta || {}), source: 'ai-content' },
+  }))
+  return block
+}
 
-  if (replaceGenerated) {
-    clearGeneratedSlideContent(projectId, slideId)
+function appendBlockSubtitle(block, subtitle) {
+  if (!subtitle) return
+  block.elements.push({
+    type: 'text',
+    x: 0,
+    y: 54,
+    width: 760,
+    height: 36,
+    meta: { source: 'ai-content' },
+    content: {
+      text: subtitle,
+      fontSize: 16,
+      fontWeight: '500',
+      textAlign: 'left',
+      color: '#64748b',
+      lineHeight: 1.4,
+      fontFamily: 'Inter, sans-serif',
+    },
+  })
+}
+
+function appendBlockCallout(block, callout) {
+  if (!callout) return
+  const bounds = getContentBlockBounds(block)
+  block.elements.push({
+    type: 'text',
+    x: 0,
+    y: bounds.height + 18,
+    width: Math.max(bounds.width, 720),
+    height: 40,
+    meta: { source: 'ai-content' },
+    content: {
+      text: `Takeaway: ${callout}`,
+      fontSize: 15,
+      fontWeight: '600',
+      textAlign: 'left',
+      color: '#6c47ff',
+      lineHeight: 1.4,
+      fontFamily: 'Inter, sans-serif',
+    },
+  })
+}
+
+function resolveGeneratedBlockOrigin(projectId, block) {
+  const project = projectStore.getProject(projectId)
+  const bounds = getContentBlockBounds(block)
+  const canvasWidth = Number(project?.settings?.slideWidth || 960)
+  return {
+    x: Math.max(40, Math.round((canvasWidth - bounds.width) / 2)),
+    y: 54,
   }
+}
 
+function buildCardsBlock(normalized) {
+  const block = cloneBuiltInBlock(CONTENT_LAYOUT_BLOCKS.cards)
+  if (!block) return null
+  const cards = normalized.cards
+  block.elements[0].content.text = normalized.title
+  block.elements[1].content.text = normalized.subtitle || normalized.callout || 'Use the three cards to frame the main ideas.'
+  cards.forEach((card, index) => {
+    block.elements[5 + index].content.text = card.title
+    block.elements[8 + index].content.text = card.body
+  })
+  if (normalized.callout && normalized.subtitle) appendBlockCallout(block, normalized.callout)
+  return block
+}
+
+function buildComparisonBlock(normalized) {
+  const block = cloneBuiltInBlock(CONTENT_LAYOUT_BLOCKS.comparison)
+  if (!block) return null
+  block.elements[0].content.text = normalized.title
+  block.elements[3].content.text = normalized.comparison.leftTitle
+  block.elements[4].content.text = normalized.comparison.rightTitle
+  block.elements[5].content = {
+    ...block.elements[5].content,
+    text: normalized.comparison.leftPoints.map((point) => `• ${point}`).join('\n'),
+    fontSize: 17,
+    lineHeight: 1.55,
+  }
+  block.elements[6].content = {
+    ...block.elements[6].content,
+    text: normalized.comparison.rightPoints.map((point) => `• ${point}`).join('\n'),
+    fontSize: 17,
+    lineHeight: 1.55,
+  }
+  appendBlockSubtitle(block, normalized.subtitle)
+  appendBlockCallout(block, normalized.callout)
+  return block
+}
+
+function buildMetricsBlock(normalized) {
+  const block = cloneBuiltInBlock(CONTENT_LAYOUT_BLOCKS.metrics)
+  if (!block) return null
+  block.elements[0].content.text = normalized.title
+  normalized.metrics.forEach((metric, index) => {
+    block.elements[4 + index].content.text = metric.value
+    block.elements[7 + index].content.text = metric.label
+  })
+  appendBlockSubtitle(block, normalized.subtitle)
+  appendBlockCallout(block, normalized.callout)
+  return block
+}
+
+function buildTimelineBlock(normalized) {
+  const block = cloneBuiltInBlock(CONTENT_LAYOUT_BLOCKS.timeline)
+  if (!block) return null
+  block.elements[0].content.text = normalized.title
+  normalized.timeline.forEach((item, index) => {
+    block.elements[6 + index].content = {
+      ...block.elements[6 + index].content,
+      text: `${item.title}\n${item.detail}`,
+      fontSize: 16,
+      lineHeight: 1.35,
+    }
+  })
+  appendBlockSubtitle(block, normalized.subtitle)
+  appendBlockCallout(block, normalized.callout)
+  return block
+}
+
+function buildFaqBlock(normalized) {
+  const block = cloneBuiltInBlock(CONTENT_LAYOUT_BLOCKS.faq)
+  if (!block) return null
+  block.elements[0].content.text = normalized.title
+  normalized.faqs.forEach((item, index) => {
+    block.elements[4 + index].content = {
+      ...block.elements[4 + index].content,
+      text: `${item.question}\n${item.answer}`,
+      fontSize: 16,
+      lineHeight: 1.35,
+    }
+    block.elements[4 + index].height = 44
+  })
+  appendBlockSubtitle(block, normalized.subtitle)
+  appendBlockCallout(block, normalized.callout)
+  return block
+}
+
+function buildProcessBlock(normalized) {
+  const block = cloneBuiltInBlock(CONTENT_LAYOUT_BLOCKS.process)
+  if (!block) return null
+  block.elements[0].content.text = normalized.title
+  normalized.process.forEach((item, index) => {
+    block.elements[8 + index].content.text = item.title
+    block.elements[11 + index].content.text = item.detail
+  })
+  appendBlockSubtitle(block, normalized.subtitle)
+  appendBlockCallout(block, normalized.callout)
+  return block
+}
+
+function buildLayoutBlock(normalized) {
+  switch (normalized.layout) {
+    case 'cards':
+      return buildCardsBlock(normalized)
+    case 'comparison':
+      return buildComparisonBlock(normalized)
+    case 'metrics':
+      return buildMetricsBlock(normalized)
+    case 'timeline':
+      return buildTimelineBlock(normalized)
+    case 'faq':
+      return buildFaqBlock(normalized)
+    case 'process':
+      return buildProcessBlock(normalized)
+    default:
+      return null
+  }
+}
+
+function applyClassicContentToSlide(projectId, slideId, normalized) {
   if (normalized.title) {
     projectStore.updateSlide(projectId, slideId, { title: normalized.title })
     addGeneratedElement(projectId, slideId, 'heading', {
@@ -219,6 +614,24 @@ function applyNormalizedContentToSlide(projectId, slideId, normalized, { replace
       x: 80, y: 432, width: 800, height: 40,
       content: { text: `💡 ${normalized.callout}`, fontSize: 15, fontWeight: '600', textAlign: 'center', color: '#6c47ff', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }
     })
+  }
+}
+
+function applyNormalizedContentToSlide(projectId, slideId, normalized, { replaceGenerated = false } = {}) {
+  if (!projectId || !slideId) return
+
+  if (replaceGenerated) {
+    clearGeneratedSlideContent(projectId, slideId)
+  }
+
+  const block = buildLayoutBlock(normalized)
+  projectStore.updateSlide(projectId, slideId, { title: normalized.title || 'Untitled Slide' })
+
+  if (block) {
+    const origin = resolveGeneratedBlockOrigin(projectId, block)
+    projectStore.insertContentBlock(projectId, slideId, block, origin)
+  } else {
+    applyClassicContentToSlide(projectId, slideId, normalized)
   }
 }
 
@@ -276,7 +689,7 @@ function applyGeneratedResult() {
 async function generateCreativeOptions() {
   const t = topic.value.trim() || '[your topic]'
   const optionPrompt = `You are an expert instructional designer.
-Create exactly 3 distinct creative slide directions for a "${slideType.value}" slide about "${t}".
+Create exactly 3 distinct creative slide directions for a "${slideType.value}" slide about "${t}" using a ${contentLayoutMode.value} layout.
 
 Return ONLY valid JSON array:
 [
@@ -504,6 +917,24 @@ async function runFreePrompt() {
             <option value="summary">Summary</option>
             <option value="callout">Key Takeaway</option>
           </select>
+        </div>
+
+        <div v-if="contentGenerationMode === 'single'" class="form-group">
+          <div class="layout-label-row">
+            <label class="form-label">Layout</label>
+            <span class="layout-current-hint">{{ selectedContentLayout.hint }}</span>
+          </div>
+          <div class="layout-preset-grid" role="group" aria-label="AI layout preset">
+            <button
+              v-for="layout in CONTENT_LAYOUT_OPTIONS"
+              :key="layout.id"
+              :class="['layout-preset-card', contentLayoutMode === layout.id && 'active']"
+              @click="contentLayoutMode = layout.id"
+            >
+              <span class="layout-preset-title">{{ layout.label }}</span>
+              <span class="layout-preset-hint">{{ layout.hint }}</span>
+            </button>
+          </div>
         </div>
 
         <div v-else class="form-group">
@@ -1136,6 +1567,62 @@ async function runFreePrompt() {
   line-height: 1.5;
 }
 
+.layout-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.layout-current-hint {
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+.layout-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.layout-preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface-overlay) 82%, #ffffff 18%);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+}
+
+.layout-preset-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border));
+  color: var(--color-text);
+}
+
+.layout-preset-card.active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary-light) 18%, #ffffff 82%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 28%, transparent);
+  color: var(--color-primary);
+}
+
+.layout-preset-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.layout-preset-hint {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 /* Regenerate row */
 .regen-row {
   display: flex;
@@ -1220,6 +1707,12 @@ async function runFreePrompt() {
 .difficulty-badge.intermediate { background: rgba(250,166,26,.15); color: #faa61a; }
 .difficulty-badge.advanced { background: rgba(237,66,69,.15); color: #ed4245; }
 .type-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; background: var(--color-primary-light); color: var(--color-primary); font-weight: 600; }
+
+@media (max-width: 560px) {
+  .layout-preset-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 .q-question {
   padding: 10px 12px 6px;

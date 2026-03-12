@@ -1,6 +1,123 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+const SUPPORTED_LAYOUT_MODES = new Set(['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process'])
+
+function normalizeLayoutMode(layoutMode) {
+  const normalized = String(layoutMode || 'classic').trim().toLowerCase()
+  return SUPPORTED_LAYOUT_MODES.has(normalized) ? normalized : 'classic'
+}
+
+function buildLayoutSchema(topic, layoutMode) {
+  const layout = normalizeLayoutMode(layoutMode)
+  const sharedFields = `{
+  "layout": "${layout}",
+  "title": "Concise, engaging slide title",
+  "subtitle": "One-line supporting statement (optional)",
+  "callout": "Single most important takeaway"
+}`
+
+  const schemaMap = {
+    classic: `${sharedFields.replace('\n}', ',\n  "bullets": ["Specific point 1 about ' + topic + '", "Specific point 2", "Specific point 3"]\n}')}`,
+    cards: `${sharedFields.replace('\n}', ',\n  "cards": [{ "title": "Card title", "body": "Short supporting copy" }, { "title": "Card title", "body": "Short supporting copy" }, { "title": "Card title", "body": "Short supporting copy" }]\n}')}`,
+    comparison: `${sharedFields.replace('\n}', ',\n  "comparison": {\n    "leftTitle": "Option A",\n    "leftPoints": ["Point 1", "Point 2", "Point 3"],\n    "rightTitle": "Option B",\n    "rightPoints": ["Point 1", "Point 2", "Point 3"]\n  }\n}')}`,
+    metrics: `${sharedFields.replace('\n}', ',\n  "metrics": [{ "value": "92%", "label": "KPI label" }, { "value": "3.4x", "label": "KPI label" }, { "value": "14d", "label": "KPI label" }]\n}')}`,
+    timeline: `${sharedFields.replace('\n}', ',\n  "timeline": [{ "title": "Phase title", "detail": "Short explanation" }, { "title": "Phase title", "detail": "Short explanation" }, { "title": "Phase title", "detail": "Short explanation" }, { "title": "Phase title", "detail": "Short explanation" }]\n}')}`,
+    faq: `${sharedFields.replace('\n}', ',\n  "faqs": [{ "question": "Question?", "answer": "Short answer" }, { "question": "Question?", "answer": "Short answer" }, { "question": "Question?", "answer": "Short answer" }]\n}')}`,
+    process: `${sharedFields.replace('\n}', ',\n  "process": [{ "title": "Step title", "detail": "What happens here" }, { "title": "Step title", "detail": "What happens here" }, { "title": "Step title", "detail": "What happens here" }]\n}')}`,
+  }
+
+  return schemaMap[layout] || schemaMap.classic
+}
+
+function buildLayoutInstruction(layoutMode) {
+  const layout = normalizeLayoutMode(layoutMode)
+  const instructionMap = {
+    classic: 'Use a standard title, subtitle, and bullet structure for explanatory content.',
+    cards: 'Structure the slide as three distinct cards covering separate concepts, benefits, or pillars.',
+    comparison: 'Create a balanced side-by-side comparison with clear labels and meaningful contrasting points.',
+    metrics: 'Return three concrete, presentation-ready metrics with short labels and realistic values.',
+    timeline: 'Sequence the story into four milestones that progress logically from start to finish.',
+    faq: 'Return three strong audience questions with concise, useful answers.',
+    process: 'Break the topic into three clear steps with practical descriptions.',
+  }
+
+  return instructionMap[layout] || instructionMap.classic
+}
+
+function buildMockSlideContent(topic, layoutMode) {
+  const layout = normalizeLayoutMode(layoutMode)
+  const common = {
+    layout,
+    title: topic || 'Sample Slide',
+    subtitle: `A practical view of ${topic || 'this topic'}`,
+    callout: `Focus on the clearest action your audience should take about ${topic || 'this topic'}.`,
+  }
+
+  const samples = {
+    classic: {
+      ...common,
+      bullets: [
+        `Explain the foundations of ${topic || 'the topic'} in concrete language`,
+        'Show the most important implications for learners or stakeholders',
+        'Close with a practical takeaway that can be applied immediately',
+      ],
+    },
+    cards: {
+      ...common,
+      cards: [
+        { title: 'Core concept', body: `Define the most important idea behind ${topic || 'the topic'}.` },
+        { title: 'Why it matters', body: 'Show the benefit, risk, or outcome that makes this worth attention.' },
+        { title: 'How to use it', body: 'End with an action, decision, or next step the audience can take.' },
+      ],
+    },
+    comparison: {
+      ...common,
+      comparison: {
+        leftTitle: 'Traditional approach',
+        leftPoints: ['Manual and slower', 'Less consistent output', 'Harder to scale'],
+        rightTitle: 'Improved approach',
+        rightPoints: ['Faster delivery', 'Clearer standards', 'Easier to repeat at scale'],
+      },
+    },
+    metrics: {
+      ...common,
+      metrics: [
+        { value: '92%', label: 'Completion rate' },
+        { value: '3.4x', label: 'Engagement lift' },
+        { value: '14d', label: 'Average ramp time' },
+      ],
+    },
+    timeline: {
+      ...common,
+      timeline: [
+        { title: 'Discover', detail: 'Identify the real need and constraints.' },
+        { title: 'Design', detail: 'Shape the experience and structure.' },
+        { title: 'Pilot', detail: 'Test the approach with a small audience.' },
+        { title: 'Launch', detail: 'Roll out and measure the outcome.' },
+      ],
+    },
+    faq: {
+      ...common,
+      faqs: [
+        { question: 'What problem does this solve?', answer: 'It removes confusion and speeds up execution.' },
+        { question: 'Who should care most?', answer: 'Teams responsible for quality, speed, or consistency.' },
+        { question: 'What should happen next?', answer: 'Start with a small pilot and measure the result.' },
+      ],
+    },
+    process: {
+      ...common,
+      process: [
+        { title: 'Assess', detail: 'Review the current state and define success.' },
+        { title: 'Build', detail: 'Create the workflow, content, or system needed.' },
+        { title: 'Refine', detail: 'Measure results and improve the weak points.' },
+      ],
+    },
+  }
+
+  return JSON.stringify(samples[layout] || samples.classic)
+}
+
 export const useAIStore = defineStore('ai', () => {
   const apiKey = ref(localStorage.getItem('ai_api_key') || '')
   const apiProvider = ref(localStorage.getItem('ai_provider') || 'openai')
@@ -61,7 +178,8 @@ export const useAIStore = defineStore('ai', () => {
     }
   }
 
-  async function generateSlideContent(topic, slideType = 'general', description = '', customPrompt = '') {
+  async function generateSlideContent(topic, slideType = 'general', description = '', customPrompt = '', options = {}) {
+    const layoutMode = normalizeLayoutMode(options?.layoutMode)
     let prompt
     if (customPrompt.trim()) {
       prompt = customPrompt.trim()
@@ -79,32 +197,23 @@ export const useAIStore = defineStore('ai', () => {
       prompt = `You are an expert eLearning content creator and visual slide designer.
 Create content for a "${slideType}" eLearning slide about: "${topic}".${descNote}
 Instruction: ${slideTypeGuide}
+Layout mode: ${layoutMode}
+Layout instruction: ${buildLayoutInstruction(layoutMode)}
 
 Return ONLY a valid JSON object, no markdown:
-{
-  "title": "Concise, engaging slide title",
-  "subtitle": "One-line supporting statement (optional)",
-  "bullets": ["Specific point 1 about ${topic}", "Specific point 2", "Specific point 3"],
-  "callout": "Single most important takeaway",
-  "design": {
-    "layout": "classic | split | focus",
-    "titleAlign": "left | center",
-    "bulletStyle": "dot | check | number",
-    "emphasis": "balanced | callout"
-  }
-}
+${buildLayoutSchema(topic, layoutMode)}
 
 Rules:
 - Keep tone professional and concise
-- Use 3-5 bullets with strong, action-oriented wording
 - Keep subtitle under 18 words
-- Ensure all content is specific to "${topic}" — never use generic placeholders.`
+- Ensure all content is specific to "${topic}" — never use generic placeholders
+- The JSON must match the requested layout mode and include only concise, presentation-ready copy.`
     }
-    const result = await generate(prompt, { type: 'slideContent', slideType, topic })
+    const result = await generate(prompt, { type: 'slideContent', slideType, topic, layoutMode })
     if (!result) return null
     try {
       return JSON.parse(result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
-    } catch { return { title: topic, bullets: [result] } }
+    } catch { return { title: topic, bullets: [result], layout: layoutMode } }
   }
 
   async function generateSlideDeck(topic, slideCount = 5, {
@@ -257,22 +366,7 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
     const topic = context.topic || 'this topic'
     const count = Math.max(1, Math.min(20, Number(context.slideCount) || 5))
     const samples = {
-      slideContent: JSON.stringify({
-        title: context.topic || 'Sample Slide',
-        subtitle: `An introduction to ${topic}`,
-        bullets: [
-          `${context.topic ? context.topic + ' covers' : 'This topic covers'} foundational principles that drive real-world applications`,
-          'Understanding the core components helps in diagnosing and solving complex problems effectively',
-          'Best practices ensure safety, efficiency, and long-term performance in this domain',
-        ],
-        callout: `Master the fundamentals of ${context.topic || 'this subject'} to build a strong professional foundation`,
-        design: {
-          layout: 'split',
-          titleAlign: 'left',
-          bulletStyle: 'check',
-          emphasis: 'balanced',
-        },
-      }),
+      slideContent: buildMockSlideContent(context.topic, context.layoutMode),
       slideDeck: JSON.stringify({
         slides: Array.from({ length: count }, (_, index) => {
           const isFirst = index === 0
