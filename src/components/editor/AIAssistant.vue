@@ -877,41 +877,54 @@ async function applyTranslation() {
 const imageTopic = ref('')
 const isImageGenerating = ref(false)
 
+function withTimeout(promise, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error('Timed out'))
+    }, timeoutMs)
+
+    Promise.resolve(promise)
+      .then((value) => {
+        window.clearTimeout(timeoutId)
+        resolve(value)
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId)
+        reject(error)
+      })
+  })
+}
+
 async function generateAiImage() {
   if (!imageTopic.value.trim()) return
   isImageGenerating.value = true
-  result.value = "Optimizing prompt..."
+  result.value = 'Preparing image prompt...'
 
   try {
     let finalPrompt = imageTopic.value
-    const enhanced = await aiStore.generateImagePrompt(imageTopic.value)
-    if (enhanced) {
-      finalPrompt = enhanced.replace(/```(json)?\n?/g, '').trim()
+    try {
+      const enhanced = await withTimeout(aiStore.generateImagePrompt(imageTopic.value), 2200)
+      if (enhanced) {
+        finalPrompt = enhanced.replace(/```(json)?\n?/g, '').trim()
+      }
+    } catch {
+      finalPrompt = imageTopic.value
     }
 
-    result.value = "Painting image... this takes about 10-20 seconds. Please wait."
+    result.value = 'Generating image and inserting it on the slide...'
 
-    // Create Pollinations URL (free AI image generation, no API key needed)
-    // Use slightly smaller dimensions for faster generation and cache-busting seed
+    // Pollinations renders the image lazily from the URL, so insert immediately instead of blocking on preload.
     const seed = Math.floor(Math.random() * 1000000)
     const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=600&height=400&nologo=true&seed=${seed}`
-
-    // Preload image before adding to canvas so the loading spinner stays active
-    await new Promise((resolve, reject) => {
-      const img = new Image()
-      img.onload = resolve
-      img.onerror = reject
-      img.src = imgUrl
-    })
 
     projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
       x: 60, y: 150, width: 420, height: 280, // matches 600x400 aspect ratio
       content: { src: imgUrl, objectFit: 'cover' }
     })
 
-    result.value = "Image added to slide!"
+    result.value = 'Image added to slide. It may take a few seconds to render.'
   } catch (error) {
-    result.value = "Failed to generate image. Try a different prompt."
+    result.value = 'Could not insert the image right now. Try again in a moment.'
   } finally {
     isImageGenerating.value = false
   }
