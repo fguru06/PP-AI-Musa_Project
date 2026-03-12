@@ -26,12 +26,17 @@ function startEdit() {
   nextTick(() => {
     if (textRef.value) {
       textRef.value.focus()
-      const range = document.createRange()
-      range.selectNodeContents(textRef.value)
-      range.collapse(false) // move caret to end
-      const sel = window.getSelection()
-      sel.removeAllRanges()
-      sel.addRange(range)
+      if (typeof textRef.value.setSelectionRange === 'function') {
+        const len = textRef.value.value.length
+        textRef.value.setSelectionRange(len, len)
+      } else {
+        const range = document.createRange()
+        range.selectNodeContents(textRef.value)
+        range.collapse(false) // move caret to end
+        const sel = window.getSelection()
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
     }
   })
 }
@@ -49,25 +54,51 @@ function handleMouseDown(e) {
 
 function stopEdit() {
   isEditing.value = false
-  if (textRef.value) {
-    const finalTxt = textRef.value.innerText
-    localText.value = finalTxt
-    projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, props.element.id, {
-      content: { ...props.element.content, text: finalTxt }
-    })
-  }
+  const finalTxt = localText.value
+  projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, props.element.id, {
+    content: { ...props.element.content, text: finalTxt }
+  })
 }
 </script>
 
 <template>
-  <div
-    class="text-element"
+  <textarea
+    v-if="isEditing"
+    class="text-element-input"
     ref="textRef"
-    :contenteditable="isEditing"
-    @dblclick="startEdit"
+    v-model="localText"
     @blur="stopEdit"
-    @input="handleInput"
     @mousedown="handleMouseDown"
+    :style="{
+      fontSize: (c.fontSize || 16) + 'px',
+      fontFamily: c.fontFamily || 'Inter, sans-serif',
+      fontWeight: c.fontWeight || 'normal',
+      fontStyle: c.fontStyle || 'normal',
+      textDecoration: c.textDecoration || 'none',
+      textAlign: c.textAlign || 'left',
+      color: c.color || '#1a1a2e',
+      lineHeight: c.lineHeight || 1.5,
+      textTransform: c.textTransform || 'none',
+      letterSpacing: (c.letterSpacing || 0) + 'px',
+      width: '100%',
+      height: '100%',
+      background: 'transparent',
+      border: 'none',
+      resize: 'none',
+      overflow: 'hidden',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word',
+      padding: '4px',
+      outline: '2px solid var(--color-primary)',
+      cursor: 'text',
+      margin: 0,
+      display: 'block'
+    }"
+  ></textarea>
+  <div
+    v-else
+    class="text-element"
+    @dblclick="startEdit"
     :style="{
       fontSize: (c.fontSize || 16) + 'px',
       fontFamily: c.fontFamily || 'Inter, sans-serif',
@@ -85,9 +116,9 @@ function stopEdit() {
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
       padding: '4px',
-      outline: isEditing ? '2px solid var(--primary)' : 'none',
-      cursor: isEditing ? 'text' : 'inherit',
-      userSelect: isEditing ? 'text' : 'none'
+      outline: 'none',
+      cursor: 'inherit',
+      userSelect: 'none'
     }"
   >{{ localText }}</div>
 </template>
