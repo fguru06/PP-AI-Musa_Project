@@ -17,6 +17,11 @@ watch(activeMode, () => {
   result.value = ''
 })
 
+watch(() => editorStore.aiPanelMode, (mode) => {
+  if (!mode) return
+  activeMode.value = mode
+}, { immediate: true })
+
 const quizCount = ref(4)
 const slideType = ref('general')
 const targetLang = ref('Spanish')

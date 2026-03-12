@@ -44,6 +44,15 @@ function sanitizeExportName(name, fallback = 'presentation') {
   return value.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim() || fallback
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
 function buildRuntimeCSS(theme, settings, mode = 'html') {
   const canvasSize = getProjectCanvasSize(settings)
   return `
@@ -56,24 +65,28 @@ html, body { margin: 0; min-height: 100%; }
 body {
   min-height: 100vh;
   font-family: ${theme?.fontFamily || 'Inter, sans-serif'};
-  background:
+  background: ${mode === 'pdf'
+    ? '#f3f4f6'
+    : `
     radial-gradient(circle at 18% 18%, rgba(108, 71, 255, 0.24), transparent 22%),
     radial-gradient(circle at 82% 72%, rgba(0, 201, 167, 0.18), transparent 28%),
-    linear-gradient(180deg, #08101f 0%, #050916 62%, #02050b 100%);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+    linear-gradient(180deg, #08101f 0%, #050916 62%, #02050b 100%)`};
+  color: ${mode === 'pdf' ? '#111827' : '#ffffff'};
+  display: ${mode === 'pdf' ? 'block' : 'flex'};
+  align-items: ${mode === 'pdf' ? 'stretch' : 'center'};
+  justify-content: ${mode === 'pdf' ? 'flex-start' : 'center'};
+  overflow: ${mode === 'pdf' ? 'auto' : 'hidden'};
+  padding: ${mode === 'pdf' ? '24px 0' : '0'};
 }
 .lf-shell {
-  width: 100vw;
-  height: 100vh;
+  width: ${mode === 'pdf' ? '100%' : '100vw'};
+  min-height: ${mode === 'pdf' ? 'auto' : '100vh'};
+  height: ${mode === 'pdf' ? 'auto' : '100vh'};
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: ${mode === 'pdf' ? 'stretch' : 'center'};
   justify-content: center;
-  overflow: hidden;
+  overflow: ${mode === 'pdf' ? 'visible' : 'hidden'};
 }
 .lf-shell::before,
 .lf-shell::after {
@@ -110,11 +123,13 @@ body {
 .lf-stage-shell {
   position: relative;
   z-index: 1;
-  padding: 18px;
-  border-radius: 32px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05));
-  border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 30px 80px rgba(0,0,0,.34);
+  width: ${mode === 'pdf' ? '100%' : 'auto'};
+  max-width: ${mode === 'pdf' ? 'none' : 'auto'};
+  padding: ${mode === 'pdf' ? '0' : '18px'};
+  border-radius: ${mode === 'pdf' ? '0' : '32px'};
+  background: ${mode === 'pdf' ? 'transparent' : 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05))'};
+  border: ${mode === 'pdf' ? 'none' : '1px solid rgba(255,255,255,0.12)'};
+  box-shadow: ${mode === 'pdf' ? 'none' : '0 30px 80px rgba(0,0,0,.34)'};
 }
 .lf-stage-shell::before {
   content: '';
@@ -126,21 +141,36 @@ body {
 }
 .presentation {
   position: relative;
-  width: var(--lf-slide-width);
-  height: var(--lf-slide-height);
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 30px 90px rgba(0,0,0,.5);
+  width: ${mode === 'pdf' ? '100%' : 'var(--lf-slide-width)'};
+  height: ${mode === 'pdf' ? 'auto' : 'var(--lf-slide-height)'};
+  border-radius: ${mode === 'pdf' ? '0' : '18px'};
+  overflow: ${mode === 'pdf' ? 'visible' : 'hidden'};
+  box-shadow: ${mode === 'pdf' ? 'none' : '0 30px 90px rgba(0,0,0,.5)'};
   transform-origin: center center;
+  display: ${mode === 'pdf' ? 'flex' : 'block'};
+  flex-direction: ${mode === 'pdf' ? 'column' : 'row'};
+  align-items: ${mode === 'pdf' ? 'center' : 'stretch'};
+  gap: ${mode === 'pdf' ? '24px' : '0'};
 }
 .slide {
-  position: absolute;
-  inset: 0;
-  display: none;
+  position: ${mode === 'pdf' ? 'relative' : 'absolute'};
+  inset: ${mode === 'pdf' ? 'auto' : '0'};
+  display: ${mode === 'pdf' ? 'block' : 'none'};
   overflow: hidden;
   color: ${theme?.textColor || '#1a1a2e'};
+  width: var(--lf-slide-width);
+  height: var(--lf-slide-height);
+  flex: 0 0 auto;
+  background-clip: padding-box;
+  box-shadow: ${mode === 'pdf' ? '0 12px 32px rgba(15, 23, 42, 0.16)' : 'none'};
+  page-break-after: ${mode === 'pdf' ? 'always' : 'auto'};
+  break-after: ${mode === 'pdf' ? 'page' : 'auto'};
 }
 .slide.active { display: block; }
+.slide:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
 .lf-empty {
   display: flex;
   align-items: center;
@@ -562,6 +592,69 @@ body {
   display: ${settings?.showProgress === false ? 'none' : 'block'};
   z-index: 6;
 }
+${mode === 'iframe' ? `
+body {
+  background: transparent;
+}
+.lf-shell::before,
+.lf-shell::after,
+.lf-grid {
+  display: none;
+}
+.lf-stage-shell {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+.lf-stage-shell::before {
+  display: none;
+}
+.presentation {
+  box-shadow: none;
+}
+` : ''}
+${mode === 'pdf' ? `
+.lf-shell::before,
+.lf-shell::after,
+.lf-grid,
+.progress,
+.dot-nav,
+.nav {
+  display: none !important;
+}
+.lf-stage-shell::before {
+  display: none;
+}
+@page {
+  size: auto;
+  margin: 12mm;
+}
+@media print {
+  html, body {
+    min-height: auto;
+    background: #ffffff;
+  }
+  body {
+    padding: 0;
+    overflow: visible;
+  }
+  .lf-shell,
+  .lf-stage-shell,
+  .presentation {
+    width: 100%;
+    min-height: auto;
+    overflow: visible;
+  }
+  .presentation {
+    gap: 0;
+  }
+  .slide {
+    margin: 0 auto;
+    box-shadow: none;
+  }
+}
+` : ''}
 @media (max-width: 900px) {
   .lf-stage-shell {
     padding: 10px;
@@ -580,6 +673,7 @@ body {
 function buildRuntimeJS(mode = 'html') {
   return `
 (function () {
+  var exportMode = ${JSON.stringify(mode)};
   var dataNode = document.getElementById('lf-data');
   if (!dataNode) return;
 
@@ -624,6 +718,15 @@ function buildRuntimeJS(mode = 'html') {
     return;
   }
 
+  if (exportMode === 'pdf') {
+    slideNodes.forEach(function (node) {
+      node.classList.add('active');
+      triggerLoadInteractions(node);
+    });
+    queuePrint();
+    return;
+  }
+
   renderDots();
 
   if (prevBtn) prevBtn.addEventListener('click', function () { prev(); });
@@ -656,12 +759,49 @@ function buildRuntimeJS(mode = 'html') {
   function resizeStage() {
     var stage = document.getElementById('presentation');
     if (!stage) return;
+    if (exportMode === 'pdf') {
+      stage.style.transform = 'none';
+      return;
+    }
     var slideWidth = Math.max(320, Number(settings.slideWidth || 960));
     var slideHeight = Math.max(320, Number(settings.slideHeight || 540));
     var availableWidth = Math.max(240, window.innerWidth - 72);
     var availableHeight = Math.max(240, window.innerHeight - 72);
     var scale = Math.min(availableWidth / slideWidth, availableHeight / slideHeight, 1.5);
     stage.style.transform = 'scale(' + scale + ')';
+  }
+
+  function queuePrint() {
+    var images = Array.prototype.filter.call(document.images || [], function (image) {
+      return !image.complete;
+    });
+    var didPrint = false;
+
+    function triggerPrint() {
+      if (didPrint) return;
+      didPrint = true;
+      window.setTimeout(function () {
+        window.focus();
+        window.print();
+      }, 300);
+    }
+
+    if (!images.length) {
+      triggerPrint();
+      return;
+    }
+
+    var remaining = images.length;
+    images.forEach(function (image) {
+      function onReady() {
+        remaining -= 1;
+        if (remaining <= 0) triggerPrint();
+      }
+      image.addEventListener('load', onReady, { once: true });
+      image.addEventListener('error', onReady, { once: true });
+    });
+
+    window.setTimeout(triggerPrint, 1800);
   }
 
   function renderDots() {
@@ -1577,9 +1717,18 @@ async function doExportWeb(mode = 'html') {
   const p = project.value
   if (!p) return
   exportStatus.value = 'processing'
-  
-  const zip = new JSZip()
-  const assetsFolder = zip.folder('assets')
+
+  const pdfWindow = mode === 'pdf' && typeof window !== 'undefined'
+    ? window.open('', '_blank')
+    : null
+  if (mode === 'pdf' && !pdfWindow) {
+    exportStatus.value = 'error'
+    setTimeout(() => exportStatus.value = '', 3000)
+    return
+  }
+
+  const zip = mode === 'pdf' ? null : new JSZip()
+  const assetsFolder = zip ? zip.folder('assets') : null
   let assetCounter = 0
   
   // Helper to fetch and add asset to zip, returns the new local path
@@ -1593,6 +1742,10 @@ async function doExportWeb(mode = 'html') {
     try {
       const response = await fetch(url)
       const blob = await response.blob()
+
+      if (mode === 'pdf') {
+        return await blobToDataUrl(blob)
+      }
       
       let ext = 'bin'
       const mime = blob.type
@@ -1664,7 +1817,7 @@ async function doExportWeb(mode = 'html') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${exportName}</title>
-${mode !== 'pdf' ? `${mode !== 'pdf' ? `<link rel="stylesheet" href="style.css">` : `<style>${css}</style>`}` : `<style>${css}</style>`}
+${mode === 'pdf' ? `<style>${css}</style>` : `<link rel="stylesheet" href="style.css">`}
 </head>
 <body class="${mode === 'iframe' ? 'is-iframe' : mode === 'pdf' ? 'is-pdf' : ''}">
 <div class="lf-shell">
@@ -1684,6 +1837,15 @@ ${dataScriptTag}
 ${mode !== 'pdf' ? runtimeScriptTag : `<script>${js}<\/script>`}
 </body>
 </html>`
+
+  if (mode === 'pdf') {
+    pdfWindow.document.open()
+    pdfWindow.document.write(html)
+    pdfWindow.document.close()
+    exportStatus.value = 'success'
+    setTimeout(() => exportStatus.value = '', 3000)
+    return
+  }
 
   zip.file('index.html', html)
   zip.file('style.css', css)

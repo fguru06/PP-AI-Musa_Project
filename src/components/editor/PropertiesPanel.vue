@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useEditorStore } from '@/stores/editorStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { CANVAS_SIZE_PRESETS, formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset, normalizeCanvasSettings } from '@/lib/canvas'
@@ -80,6 +80,9 @@ const pendingImportedPresets = ref([])
 const importScopeFilter = ref('all')
 const importConflictMode = ref('replace')
 const chartImportDraft = ref('')
+const panelRootRef = ref(null)
+const focusedSection = ref('')
+let focusSectionTimeout = null
 
 // Local copy of element for editing
 const local = ref({})
@@ -91,6 +94,27 @@ watch(selectedEl, (el) => {
     chartImportDraft.value = ''
   }
 }, { immediate: true, deep: true })
+
+watch(
+  () => [editorStore.propertiesPanelSection, selectedEl.value?.id, editorStore.rightPanelTab],
+  async ([section, elementId, panel]) => {
+    if (!section || !elementId || panel !== 'properties') return
+
+    await nextTick()
+
+    const target = panelRootRef.value?.querySelector(`[data-props-anchor="${section}"]`)
+    if (!target) return
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    focusedSection.value = section
+
+    if (focusSectionTimeout) window.clearTimeout(focusSectionTimeout)
+    focusSectionTimeout = window.setTimeout(() => {
+      if (focusedSection.value === section) focusedSection.value = ''
+    }, 1400)
+  },
+  { immediate: true }
+)
 
 function update(patch) {
   if (!selectedEl.value) return
@@ -686,7 +710,7 @@ const fontFamilies = [
 </script>
 
 <template>
-  <div class="properties-panel">
+  <div ref="panelRootRef" class="properties-panel">
     <input ref="presetImportInput" type="file" accept="application/json,.json" style="display:none" @change="importMotionPresets" />
     <input ref="chartImportInput" type="file" accept=".csv,.txt,text/csv,text/plain" style="display:none" @change="importChartDataFile" />
     <div class="panel-section autosave-note">
@@ -1027,7 +1051,7 @@ const fontFamilies = [
     <!-- === Element selected === -->
     <template v-else>
       <!-- Geometry -->
-      <div class="panel-section">
+      <div :class="['panel-section', focusedSection === 'geometry' && 'panel-section-focused']" data-props-anchor="geometry">
         <div class="panel-title">
           Position &amp; Size
           <span class="element-type-badge">{{ selectedEl.type }}</span>
@@ -1060,7 +1084,7 @@ const fontFamilies = [
         </div>
       </div>
 
-      <div class="panel-section">
+      <div :class="['panel-section', focusedSection === 'animation' && 'panel-section-focused']" data-props-anchor="animation">
         <div class="panel-title">Animation</div>
         <div class="motion-scrubber-shell">
           <div class="motion-scrubber-header">
@@ -1162,7 +1186,7 @@ const fontFamilies = [
       </div>
 
       <!-- TEXT / HEADING properties -->
-      <div v-if="['text','heading'].includes(selectedEl.type)" class="panel-section">
+      <div v-if="['text','heading'].includes(selectedEl.type)" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Text</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Content</label>
@@ -1242,7 +1266,7 @@ const fontFamilies = [
       </div>
 
       <!-- IMAGE properties -->
-      <div v-if="selectedEl.type === 'image'" class="panel-section">
+      <div v-if="selectedEl.type === 'image'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Image</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Source URL</label>
@@ -1278,7 +1302,7 @@ const fontFamilies = [
       </div>
 
       <!-- SHAPE properties -->
-      <div v-if="selectedEl.type === 'shape'" class="panel-section">
+      <div v-if="selectedEl.type === 'shape'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Shape</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Type</label>
@@ -1319,7 +1343,7 @@ const fontFamilies = [
         </div>
       </div>
 
-      <div v-if="selectedEl.type === 'chart'" class="panel-section">
+      <div v-if="selectedEl.type === 'chart'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Chart</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Chart Type</label>
@@ -1436,7 +1460,7 @@ const fontFamilies = [
       </div>
 
       <!-- BUTTON properties -->
-      <div v-if="selectedEl.type === 'button'" class="panel-section">
+      <div v-if="selectedEl.type === 'button'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Button</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Label</label>
@@ -1515,7 +1539,7 @@ const fontFamilies = [
       </div>
 
       <!-- HOTSPOT properties -->
-      <div v-if="selectedEl.type === 'hotspot'" class="panel-section">
+      <div v-if="selectedEl.type === 'hotspot'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Hotspot</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Icon</label>
@@ -1565,7 +1589,7 @@ const fontFamilies = [
       </div>
 
       <!-- VIDEO properties -->
-      <div v-if="selectedEl.type === 'video'" class="panel-section">
+      <div v-if="selectedEl.type === 'video'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Video</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Video URL / Embed</label>
@@ -1603,7 +1627,7 @@ const fontFamilies = [
       </div>
 
       <!-- AUDIO properties -->
-      <div v-if="selectedEl.type === 'audio'" class="panel-section">
+      <div v-if="selectedEl.type === 'audio'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Audio</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Audio URL</label>
@@ -1642,7 +1666,7 @@ const fontFamilies = [
       </div>
 
       <!-- QUIZ properties -->
-      <div v-if="selectedEl.type === 'quiz'" class="panel-section">
+      <div v-if="selectedEl.type === 'quiz'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
         <div class="panel-title">Quiz Question</div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Question</label>
@@ -1938,6 +1962,10 @@ const fontFamilies = [
   overflow-y: auto;
   height: 100%;
   background: color-mix(in srgb, var(--color-surface) 92%, #10193a 8%);
+}
+.panel-section-focused {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  box-shadow: 0 0 0 1px rgba(108, 71, 255, 0.18), 0 12px 28px rgba(108, 71, 255, 0.08);
 }
 .autosave-note {
   color: var(--color-text-muted);

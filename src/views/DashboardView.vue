@@ -369,9 +369,6 @@ async function signOut() {
 }
 
 function setRailSection(section) {
-  if (section === 'community' || section === 'activity' || section === 'brand') {
-    section = 'home'
-  }
   activeRail.value = section
 
   if (section === 'content' && !currentUser.value) {
@@ -475,18 +472,6 @@ onMounted(() => {
         <button class="rail-item" :class="activeRail === 'templates' && 'active'" type="button" @click="setRailSection('templates')" data-tooltip="Browse templates" data-tooltip-position="right">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>
           Templates
-        </button>
-        <button class="rail-item" type="button" @click="setRailSection('community')" data-tooltip="Community coming soon" data-tooltip-position="right">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-          Community
-        </button>
-        <button class="rail-item" type="button" @click="setRailSection('activity')" data-tooltip="Activity coming soon" data-tooltip-position="right">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-          Activity
-        </button>
-        <button class="rail-item" type="button" @click="setRailSection('brand')" data-tooltip="Brand kit coming soon" data-tooltip-position="right">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-          Brand kit
         </button>
       </nav>
     </aside>

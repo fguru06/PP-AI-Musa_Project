@@ -18,18 +18,16 @@ const slideId = computed(() => editorStore.currentSlideId)
 const isSelected = computed(() => editorStore.selectedElementIds.includes(props.element.id))
 const isLocked = computed(() => props.element.locked)
 const isVisible = computed(() => props.element.visible !== false)
-const selectedAnimationType = computed(() => props.element.animations?.[0]?.type || 'auto')
-
-const quickAnimationOptions = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'none', label: 'None' },
-  { value: 'fade-up', label: 'Fade' },
-  { value: 'fade-left', label: 'Left' },
-  { value: 'fade-right', label: 'Right' },
-  { value: 'zoom-in', label: 'Zoom' },
-  { value: 'pop-in', label: 'Pop' },
-  { value: 'stagger-in', label: 'Stagger' },
-]
+const hasEditableText = computed(() => {
+  const content = props.element.content || {}
+  return Boolean(
+    content.text ||
+    content.label ||
+    content.question ||
+    content.popupTitle ||
+    content.popupContent
+  )
+})
 
 // Drag state
 let isDragging = false
@@ -155,7 +153,7 @@ function onResizeEnd() {
 // Double-click to edit text
 function onDblClick() {
   if (['text', 'heading'].includes(props.element.type)) {
-    editorStore.setRightPanel('properties')
+    editorStore.focusPropertiesSection('content')
   }
 }
 
@@ -178,22 +176,31 @@ function getCursor(handle) {
   return map[handle] || 'auto'
 }
 
-function updateQuickAnimation(value) {
-  if (isLocked.value) return
+function openPropertiesEditor(section = 'content') {
+  editorStore.focusPropertiesSection(section)
+}
 
-  if (value === 'auto') {
-    projectStore.updateElement(projectId.value, slideId.value, props.element.id, { animations: [] })
-    return
+function openAIEditor() {
+  const mode = hasEditableText.value
+    ? 'improve'
+    : props.element.type === 'image'
+      ? 'image'
+      : 'generate'
+
+  editorStore.openAIPanel(mode)
+}
+
+function duplicateSelectedElement() {
+  const copy = projectStore.duplicateElement(projectId.value, slideId.value, props.element.id)
+  if (copy) {
+    editorStore.selectElement(copy.id)
+    editorStore.focusPropertiesSection('geometry')
   }
+}
 
-  const current = props.element.animations?.[0] || {}
-  projectStore.updateElement(projectId.value, slideId.value, props.element.id, {
-    animations: [{
-      type: value,
-      delay: Math.max(0, Number(current.delay) || 0),
-      duration: Math.max(0.1, Number(current.duration) || 0.64),
-    }],
-  })
+function deleteSelectedElement() {
+  projectStore.deleteElement(projectId.value, slideId.value, props.element.id)
+  editorStore.clearSelection()
 }
 </script>
 
@@ -209,11 +216,17 @@ function updateQuickAnimation(value) {
     <!-- Selection border + handles -->
     <template v-if="isSelected && !isLocked">
       <div class="selection-border" />
-      <div class="motion-chip" @mousedown.stop>
-        <span class="motion-chip-label">Motion</span>
-        <select class="motion-chip-select" :value="selectedAnimationType" @change="updateQuickAnimation($event.target.value)">
-          <option v-for="option in quickAnimationOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-        </select>
+      <div class="object-quickbar" @mousedown.stop>
+        <button type="button" class="quickbar-btn" @click="openPropertiesEditor('content')">Edit</button>
+        <button type="button" class="quickbar-btn" @click="openPropertiesEditor('animation')">Animation</button>
+        <button type="button" class="quickbar-btn" @click="openPropertiesEditor('geometry')">Arrange</button>
+        <button type="button" class="quickbar-btn quickbar-btn-ai" @click="openAIEditor">AI</button>
+        <button type="button" class="quickbar-icon-btn" @click="duplicateSelectedElement" title="Duplicate element" aria-label="Duplicate element">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button type="button" class="quickbar-icon-btn quickbar-icon-btn-danger" @click="deleteSelectedElement" title="Delete element" aria-label="Delete element">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
       </div>
       <div
         v-for="h in HANDLES"
@@ -244,41 +257,63 @@ function updateQuickAnimation(value) {
 }
 .locked-border { border-color: var(--color-text-muted); border-style: dashed; }
 
-.motion-chip {
+.object-quickbar {
   position: absolute;
-  top: -34px;
+  top: -44px;
   left: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 6px 8px;
   border-radius: 999px;
   background: rgba(10, 16, 31, 0.92);
   border: 1px solid rgba(255,255,255,0.12);
   box-shadow: 0 10px 28px rgba(0,0,0,0.22);
   z-index: 110;
+  max-width: min(440px, calc(100vw - 32px));
 }
 
-.motion-chip-label {
-  color: rgba(255,255,255,0.72);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
-
-.motion-chip-select {
-  background: transparent;
+.quickbar-btn,
+.quickbar-icon-btn {
   border: none;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  outline: none;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  color: #f8fafc;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   cursor: pointer;
+  transition: background .18s ease, transform .18s ease, color .18s ease;
 }
 
-.motion-chip-select option {
-  color: #111827;
+.quickbar-btn {
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.quickbar-icon-btn {
+  width: 28px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.quickbar-btn:hover,
+.quickbar-icon-btn:hover {
+  background: rgba(255,255,255,0.16);
+  transform: translateY(-1px);
+}
+
+.quickbar-btn-ai {
+  color: #c4b5fd;
+  background: rgba(108, 71, 255, 0.22);
+}
+
+.quickbar-icon-btn-danger {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.18);
 }
 
 .resize-handle {

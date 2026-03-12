@@ -13,6 +13,8 @@ export const useEditorStore = defineStore('editor', () => {
   const activeShape = ref('rectangle') // for shape tool
   const rightPanelTab = ref('properties') // 'properties' | 'layers' | 'ai' | 'theme'
   const leftPanelTab = ref('slides') // 'slides'
+  const propertiesPanelSection = ref('')
+  const aiPanelMode = ref('generate')
 
   // UI state
   const isFullscreen = ref(false)
@@ -97,6 +99,17 @@ export const useEditorStore = defineStore('editor', () => {
     rightPanelTab.value = tab
   }
 
+  function focusPropertiesSection(section = 'geometry') {
+    rightPanelTab.value = 'properties'
+    propertiesPanelSection.value = section
+  }
+
+  function openAIPanel(mode = 'generate') {
+    showAIPanel.value = true
+    rightPanelTab.value = 'ai'
+    aiPanelMode.value = mode
+  }
+
   function setZoom(level) {
     zoomLevel.value = Math.max(0.25, Math.min(3, level))
   }
@@ -147,6 +160,7 @@ export const useEditorStore = defineStore('editor', () => {
   return {
     projectId, currentSlideId, selectedElementIds, selectedElementId,
     hoveredElementId, activeTool, activeShape, rightPanelTab, leftPanelTab,
+    propertiesPanelSection, aiPanelMode,
     isFullscreen, showGrid, snapToGrid, gridSize, showRulers,
     zoomLevel, isSaving, showExportModal, showInteractionEditor,
     interactionElementId, showThemeManager, showAIPanel,
@@ -154,7 +168,7 @@ export const useEditorStore = defineStore('editor', () => {
     clipboard, isDragging, isResizing, resizeHandle, panX, panY,
     hasSelection, multiSelection,
     setProject, setCurrentSlide, selectElement, setSelection, clearSelection,
-    setActiveTool, setRightPanel, setZoom, zoomIn, zoomOut, zoomReset,
+    setActiveTool, setRightPanel, focusPropertiesSection, openAIPanel, setZoom, zoomIn, zoomOut, zoomReset,
     toggleGrid, toggleSnap, toggleSlidePanel, pushHistory, canUndo, canRedo, undo, redo,
     setClipboard,
   }
