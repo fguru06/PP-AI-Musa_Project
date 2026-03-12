@@ -35,6 +35,12 @@ let startMouseX = 0, startMouseY = 0
 // Store initial positions of all dragged elements
 let startPositions = new Map()
 
+function getSnappedValue(value) {
+  if (!editorStore.snapToGrid || !editorStore.gridSize) return value
+  const grid = editorStore.gridSize
+  return Math.round(value / grid) * grid
+}
+
 function onMouseDown(e) {
   if (isLocked.value) return
   if (e.target.classList.contains('resize-handle')) return
@@ -76,18 +82,27 @@ function onMouseMove(e) {
   if (!isDragging) return
 
   startPositions.forEach((startPos, id) => {
-    let newX = startPos.x + dx
-    let newY = startPos.y + dy
-    if (editorStore.snapToGrid && editorStore.gridSize) {
-      const g = editorStore.gridSize
-      newX = Math.round(newX / g) * g
-      newY = Math.round(newY / g) * g
-    }
-    projectStore.updateElement(projectId.value, slideId.value, id, { x: newX, y: newY })
+    const newX = startPos.x + dx
+    const newY = startPos.y + dy
+    projectStore.updateElement(projectId.value, slideId.value, id, { x: newX, y: newY }, { persist: false })
   })
 }
 
 function onMouseUp(e) {
+  if (isDragging) {
+    const dx = (e.clientX - startMouseX) / canvasScale.value
+    const dy = (e.clientY - startMouseY) / canvasScale.value
+
+    startPositions.forEach((startPos, id) => {
+      projectStore.updateElement(projectId.value, slideId.value, id, {
+        x: getSnappedValue(startPos.x + dx),
+        y: getSnappedValue(startPos.y + dy),
+      }, { persist: false })
+    })
+
+    projectStore.commitProject(projectId.value)
+  }
+
   if (!isDragging) {
     const isMultiModifier = e.ctrlKey || e.metaKey || e.shiftKey
     if (!isMultiModifier && editorStore.selectedElementIds.length > 1) {
