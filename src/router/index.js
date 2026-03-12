@@ -7,6 +7,18 @@ function isDynamicImportFailure(error) {
   return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(message)
 }
 
+function buildChunkRecoveryHref(targetHref) {
+  const basePath = import.meta.env.BASE_URL || '/'
+  const normalizedBase = basePath.endsWith('/') ? basePath : `${basePath}/`
+  const hashTarget = targetHref.startsWith('/#')
+    ? targetHref.slice(1)
+    : targetHref.startsWith('#')
+      ? targetHref
+      : `#${targetHref.replace(/^\//, '')}`
+
+  return `${normalizedBase}?v=${Date.now()}${hashTarget}`
+}
+
 const routes = [
   { path: '/', name: 'dashboard', component: () => import('@/views/DashboardView.vue') },
   { path: '/editor/:id', name: 'editor', component: () => import('@/views/EditorView.vue'), props: true },
@@ -32,16 +44,17 @@ router.onError((error, to) => {
   }
 
   const targetHref = to ? router.resolve(to).href : window.location.href
+  const recoveryHref = buildChunkRecoveryHref(targetHref)
   const previousRetryTarget = sessionStorage.getItem(ROUTE_CHUNK_RETRY_KEY)
 
-  if (previousRetryTarget === targetHref) {
+  if (previousRetryTarget === recoveryHref) {
     sessionStorage.removeItem(ROUTE_CHUNK_RETRY_KEY)
     console.error('Route chunk failed to load after reload.', error)
     return
   }
 
-  sessionStorage.setItem(ROUTE_CHUNK_RETRY_KEY, targetHref)
-  window.location.assign(targetHref)
+  sessionStorage.setItem(ROUTE_CHUNK_RETRY_KEY, recoveryHref)
+  window.location.replace(recoveryHref)
 })
 
 export default router

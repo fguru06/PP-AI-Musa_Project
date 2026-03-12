@@ -717,7 +717,7 @@ export const useProjectStore = defineStore('projects', () => {
     return el
   }
 
-  function updateElement(projectId, slideId, elementId, patch) {
+  function updateElement(projectId, slideId, elementId, patch, options = {}) {
     const p = getProject(projectId)
     if (!p) return
     const slide = p.slides.find(s => s.id === slideId)
@@ -726,8 +726,17 @@ export const useProjectStore = defineStore('projects', () => {
     if (el) {
       Object.assign(el, patch)
       p.updatedAt = Date.now()
-      persistProject(p)
+      if (options.persist !== false) {
+        persistProject(p)
+      }
     }
+  }
+
+  function commitProject(projectId) {
+    const p = getProject(projectId)
+    if (!p) return
+    p.updatedAt = Date.now()
+    persistProject(p)
   }
 
   function deleteElement(projectId, slideId, elementId) {
@@ -825,6 +834,7 @@ export const useProjectStore = defineStore('projects', () => {
     updateSlide,
     addElement,
     updateElement,
+    commitProject,
     deleteElement,
     duplicateElement,
     reorderElement,
