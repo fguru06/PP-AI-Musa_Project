@@ -905,6 +905,29 @@ function withTimeout(promise, timeoutMs) {
   })
 }
 
+function getImageGenerationFailureMessage(rawError) {
+  const message = String(rawError || '').trim()
+  const normalized = message.toLowerCase()
+
+  if (!message) {
+    return 'OpenAI image generation did not return an image. Try a simpler prompt or try again in a moment.'
+  }
+
+  if (normalized.includes('billing hard limit') || normalized.includes('billing') || normalized.includes('quota') || normalized.includes('insufficient_quota')) {
+    return 'Your OpenAI account cannot generate images right now because its billing or quota limit has been reached. Update billing in OpenAI, then try again.'
+  }
+
+  if (normalized.includes('invalid api key') || normalized.includes('incorrect api key') || normalized.includes('unauthorized')) {
+    return 'The OpenAI API key appears invalid for image generation. Check the key in API settings and try again.'
+  }
+
+  if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
+    return 'OpenAI rate-limited the image request. Wait a moment and try again.'
+  }
+
+  return `OpenAI image generation failed: ${message}`
+}
+
 async function generateAiImage() {
   if (!imageTopic.value.trim()) return
   isImageGenerating.value = true
@@ -933,7 +956,7 @@ async function generateAiImage() {
     const aiGeneratedSrc = await withTimeout(aiStore.generateImageAsset(finalPrompt), 20000).catch(() => null)
 
     if (!aiGeneratedSrc) {
-      result.value = 'OpenAI image generation did not return an image. Try a simpler prompt or try again in a moment.'
+      result.value = getImageGenerationFailureMessage(aiStore.lastError)
       return
     }
 
@@ -950,7 +973,7 @@ async function generateAiImage() {
 
     result.value = 'AI image added to slide using OpenAI image generation.'
   } catch (error) {
-    result.value = 'Could not insert the image right now. Try again in a moment.'
+    result.value = getImageGenerationFailureMessage(error?.message || aiStore.lastError)
   } finally {
     isImageGenerating.value = false
   }
