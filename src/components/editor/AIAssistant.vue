@@ -889,11 +889,19 @@ function normalizeImagePromptText(rawPrompt) {
 
 function buildAiImageCandidates(promptText, seed) {
   const encoded = encodeURIComponent(promptText)
-  const base = `https://image.pollinations.ai/prompt/${encoded}`
+  const keywords = promptText
+    .toLowerCase()
+    .replace(/[^a-z0-9\s,]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 5)
+    .join(',') || 'business,technology'
+  const base = `https://pollinations.ai/p/${encoded}`
   return [
     `${base}?width=600&height=400&nologo=true&seed=${seed}`,
-    `${base}?width=600&height=400&nologo=true&seed=${seed}&model=flux`,
-    `${base}?width=600&height=400&nologo=true&seed=${seed}&enhance=true`,
+    `${base}?width=600&height=400&seed=${seed}`,
+    `${base}?seed=${seed}`,
+    `https://loremflickr.com/800/600/${keywords}?lock=${seed}`,
   ]
 }
 
@@ -936,7 +944,15 @@ async function generateAiImage() {
     result.value = 'Generating image and inserting it on the slide...'
 
     const seed = Math.floor(Math.random() * 1000000)
-    const [primaryUrl, ...fallbackUrls] = buildAiImageCandidates(finalPrompt, seed)
+    const aiGeneratedSrc = await withTimeout(aiStore.generateImageAsset(finalPrompt), 20000).catch(() => null)
+    const [providerPrimaryUrl, ...providerFallbackUrls] = buildAiImageCandidates(finalPrompt, seed)
+    const primaryUrl = aiGeneratedSrc || providerPrimaryUrl
+    const fallbackUrls = providerFallbackUrls
+    const imageSourceType = aiGeneratedSrc
+      ? 'openai-image'
+      : primaryUrl.includes('loremflickr.com')
+        ? 'reference-fallback'
+        : 'pollinations-fallback'
 
     projectStore.addElement(editorStore.projectId, editorStore.currentSlideId, 'image', {
       x: 60, y: 150, width: 420, height: 280, // matches 600x400 aspect ratio
@@ -944,11 +960,18 @@ async function generateAiImage() {
         src: primaryUrl,
         fallbackSrcs: fallbackUrls,
         alt: imageTopic.value.trim() || 'AI generated image',
+        sourceType: imageSourceType,
         objectFit: 'cover',
       }
     })
 
-    result.value = 'Image added to slide. It may take a few seconds to render, and will retry automatically if the first source fails.'
+    if (imageSourceType === 'openai-image') {
+      result.value = 'AI image added to slide using OpenAI image generation.'
+    } else if (imageSourceType === 'pollinations-fallback') {
+      result.value = 'Added an image using the Pollinations fallback provider. Add an OpenAI API key in API settings for direct AI image generation.'
+    } else {
+      result.value = 'Added a fallback reference image because no AI image provider responded reliably. Add an OpenAI API key in API settings for direct AI image generation.'
+    }
   } catch (error) {
     result.value = 'Could not insert the image right now. Try again in a moment.'
   } finally {

@@ -554,6 +554,53 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
     return generate(prompt, { type: 'imagePrompt', topic })
   }
 
+  async function generateImageAsset(promptText) {
+    const prompt = String(promptText || '').trim()
+    if (!prompt || !apiKey.value || apiProvider.value !== 'openai') return null
+
+    isGenerating.value = true
+    lastError.value = ''
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey.value}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-image-1',
+          prompt,
+          size: '1024x1024',
+        }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error?.message || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      const firstImage = Array.isArray(data?.data) ? data.data[0] : null
+      if (!firstImage) return null
+
+      if (firstImage.b64_json) {
+        return `data:image/png;base64,${firstImage.b64_json}`
+      }
+
+      if (firstImage.url) {
+        return firstImage.url
+      }
+
+      return null
+    } catch (e) {
+      lastError.value = e.message
+      return null
+    } finally {
+      isGenerating.value = false
+    }
+  }
+
   // Mock responses when no API key
   function mockGenerate(prompt, context) {
     const topic = context.topic || 'this topic'
@@ -591,6 +638,6 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
     apiKey, apiProvider, isGenerating, lastError, generationHistory,
     setApiKey, setProvider, generate,
     generateSlideContent, generateSlideDeck, transformSourceTextToSlideContent, generateQuiz, generateVoiceoverScript,
-    generateTranslation, improveText, generateImagePrompt,
+    generateTranslation, improveText, generateImagePrompt, generateImageAsset,
   }
 })
