@@ -5,7 +5,7 @@ const SUPPORTED_LAYOUT_MODES = new Set(['classic', 'cards', 'comparison', 'metri
 const SUPPORTED_AI_PROVIDERS = new Set(['openai', 'gemini'])
 const PROVIDER_MODELS = {
   openai: 'gpt-4o-mini',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-1.5-flash',
   geminiImage: 'gemini-2.5-flash-image',
 }
 
