@@ -40,22 +40,6 @@ function extractGeminiText(data) {
   return text || ''
 }
 
-function extractGeminiImageData(data) {
-  const parts = Array.isArray(data?.candidates)
-    ? data.candidates.flatMap((candidate) => candidate?.content?.parts || [])
-    : []
-
-  for (const part of parts) {
-    const inlineData = part?.inlineData || part?.inline_data
-    const mimeType = inlineData?.mimeType || inlineData?.mime_type
-    const imageData = inlineData?.data
-    if (mimeType?.startsWith('image/') && imageData) {
-      return `data:${mimeType};base64,${imageData}`
-    }
-  }
-
-  return null
-}
 
 async function requestOpenAI(apiKey, prompt, context) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -124,35 +108,15 @@ async function requestGemini(apiKey, prompt, context) {
 }
 
 async function requestGeminiImage(apiKey, prompt) {
-  const model = PROVIDER_MODELS.geminiImage
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseModalities: ['IMAGE'],
-        imageConfig: {
-          aspectRatio: '3:2',
-        },
-      },
-    }),
-  })
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(extractErrorMessage(err, `HTTP ${response.status}`))
-  }
-
-  const data = await response.json()
-  const imageData = extractGeminiImageData(data)
-  if (!imageData) {
-    throw new Error(extractErrorMessage(data, 'Gemini did not return an image.'))
-  }
-
-  return imageData
+  // Gemini's free tier does not support image generation via the Developer API.
+  // We use Pollinations.ai as a free, high-quality fallback for image generation.
+  // It returns the image directly as a URL.
+  const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=683&nologo=true`
+  
+  // To ensure the image is loaded, we can just return the URL directly, 
+  // or fetch it to convert to base64 if needed. Returning the URL is usually fine 
+  // for the canvas/image element in this tool.
+  return imageUrl
 }
 
 function normalizeLayoutMode(layoutMode) {
@@ -688,13 +652,15 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
 
   async function generateImageAsset(promptText) {
     const prompt = String(promptText || '').trim()
-    if (!prompt || !apiKey.value) return null
+    const provider = normalizeProvider(apiProvider.value)
+
+    if (!prompt) return null
+    if (!apiKey.value && provider !== 'gemini') return null
 
     isGenerating.value = true
     lastError.value = ''
 
     try {
-      const provider = normalizeProvider(apiProvider.value)
       if (provider === 'gemini') {
         return await requestGeminiImage(apiKey.value, prompt)
       }

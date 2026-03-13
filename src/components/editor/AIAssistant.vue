@@ -224,7 +224,7 @@ const providerDisplayName = computed(() => (aiStore.apiProvider === 'gemini' ? '
 const providerKeyPlaceholder = computed(() => (aiStore.apiProvider === 'gemini' ? 'AIza...' : 'sk-...'))
 const providerKeyHint = computed(() => (
   aiStore.apiProvider === 'gemini'
-    ? 'Gemini API keys from Google AI Studio work for text features on the free tier. Gemini image generation on the Developer API typically requires a billing-enabled project. The key is stored locally in your browser and never sent to our servers.'
+    ? 'Gemini API keys from Google AI Studio work for text features on the free tier. We provide free image generation via Pollinations.ai when Gemini is selected. The key is stored locally in your browser and never sent to our servers.'
     : 'Key is stored locally in your browser. It is never sent to our servers.'
 ))
 
@@ -950,7 +950,7 @@ async function generateAiImage() {
   result.value = 'Preparing image prompt...'
 
   try {
-    if (!aiStore.apiKey) {
+    if (!aiStore.apiKey && aiStore.apiProvider !== 'gemini') {
       result.value = `AI image generation requires a ${providerDisplayName.value} API key in API settings. No fallback image was inserted.`
       return
     }
