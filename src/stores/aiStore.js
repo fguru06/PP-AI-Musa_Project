@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-const SUPPORTED_LAYOUT_MODES = new Set(['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process'])
+const SUPPORTED_LAYOUT_MODES = new Set(['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process', 'cloze', 'scenario', 'progress', 'poll', 'matching', 'sorting', 'labeledimage'])
 const SUPPORTED_AI_PROVIDERS = new Set(['openai', 'gemini'])
 const PROVIDER_MODELS = {
   openai: 'gpt-4o-mini',
@@ -152,6 +152,13 @@ function buildLayoutSchema(topic, layoutMode) {
     timeline: `${sharedFields.replace('\n}', ',\n  "timeline": [{ "title": "Phase title", "detail": "Short explanation" }, { "title": "Phase title", "detail": "Short explanation" }, { "title": "Phase title", "detail": "Short explanation" }, { "title": "Phase title", "detail": "Short explanation" }]\n}')}`,
     faq: `${sharedFields.replace('\n}', ',\n  "faqs": [{ "question": "Question?", "answer": "Short answer" }, { "question": "Question?", "answer": "Short answer" }, { "question": "Question?", "answer": "Short answer" }]\n}')}`,
     process: `${sharedFields.replace('\n}', ',\n  "process": [{ "title": "Step title", "detail": "What happens here" }, { "title": "Step title", "detail": "What happens here" }, { "title": "Step title", "detail": "What happens here" }]\n}')}`,
+    cloze: `${sharedFields.replace('\n}', ',\n  "cloze": { "text": "A sentence about ' + topic + ' where the [key word] is inside brackets." }\n}')}`,
+    scenario: `${sharedFields.replace('\n}', ',\n  "scenario": { "messages": [{ "role": "agent", "text": "Agent message here" }, { "role": "user", "text": "User response here" }] }\n}')}`,
+    progress: `${sharedFields.replace('\n}', ',\n  "progress": { "mockXP": 350, "mockLevel": 4, "mockPercent": 65 }\n}')}`,
+    poll: `${sharedFields.replace('\n}', ',\n  "poll": { "question": "Poll question?", "options": [{ "id": "1", "text": "Option 1", "votes": 10 }, { "id": "2", "text": "Option 2", "votes": 5 }] }\n}')}`,
+    matching: `${sharedFields.replace('\n}', ',\n  "matching": { "pairs": [{ "id": "1", "left": "Item 1", "right": "Match 1" }, { "id": "2", "left": "Item 2", "right": "Match 2" }] }\n}')}`,
+    sorting: `${sharedFields.replace('\n}', ',\n  "sorting": { "items": [{ "id": "1", "text": "First item", "correctOrder": 0 }, { "id": "2", "text": "Second item", "correctOrder": 1 }] }\n}')}`,
+    labeledimage: `${sharedFields.replace('\n}', ',\n  "labeledimage": { "markers": [{ "id": "1", "x": 25, "y": 25, "label": "1", "title": "Point 1", "description": "Detail" }] }\n}')}`,
   }
 
   return schemaMap[layout] || schemaMap.classic
@@ -167,6 +174,13 @@ function buildLayoutInstruction(layoutMode) {
     timeline: 'Sequence the story into four milestones that progress logically from start to finish.',
     faq: 'Return three strong audience questions with concise, useful answers.',
     process: 'Break the topic into three clear steps with practical descriptions.',
+    cloze: 'Provide a short paragraph with [bracketed words] that act as fill-in-the-blank targets.',
+    scenario: 'Provide a dialogue-based scenario with alternating agent and user messages.',
+    progress: 'Provide a progress update with arbitrary mock experience points and levels.',
+    poll: 'Provide a poll question and answers with mock vote counts.',
+    matching: 'Provide pairs of concepts or words that belong together.',
+    sorting: 'Provide a list of items to place in a specific logical order.',
+    labeledimage: 'Provide hot-spot marker details suitable for an image (title, short description, and abstract x/y coordinates).',
   }
 
   return instructionMap[layout] || instructionMap.classic
@@ -178,7 +192,7 @@ function buildDeckLayoutInstruction(layoutStrategy, layoutMode) {
     return `Use the ${layout} layout for every slide in the deck.`
   }
 
-  return 'Vary layouts across the deck when appropriate. Use a balanced mix of classic, cards, comparison, metrics, timeline, FAQ, and process layouts based on each slide purpose.'
+  return 'Vary layouts across the deck when appropriate. Use a balanced mix of layouts like classic, cards, comparison, metrics, timeline, FAQ, process, cloze, scenario, progress, poll, matching, sorting, and labeledimage based on each slide purpose.'
 }
 
 function buildDeckSchema() {
@@ -189,14 +203,21 @@ function buildDeckSchema() {
       "subtitle": "Optional one-line subtitle",
       "callout": "Key takeaway",
       "slideType": "intro|overview|concept|example|summary|callout|general",
-      "layout": "classic|cards|comparison|metrics|timeline|faq|process",
+      "layout": "classic|cards|comparison|metrics|timeline|faq|process|cloze|scenario|progress|poll|matching|sorting|labeledimage",
       "bullets": ["Point 1", "Point 2", "Point 3"],
       "cards": [{ "title": "Card title", "body": "Short supporting copy" }],
       "comparison": { "leftTitle": "Option A", "leftPoints": ["Point 1"], "rightTitle": "Option B", "rightPoints": ["Point 1"] },
       "metrics": [{ "value": "92%", "label": "KPI label" }],
       "timeline": [{ "title": "Phase title", "detail": "Short explanation" }],
       "faqs": [{ "question": "Question?", "answer": "Short answer" }],
-      "process": [{ "title": "Step title", "detail": "What happens here" }]
+      "process": [{ "title": "Step title", "detail": "What happens here" }],
+      "cloze": { "text": "Sentence with [bracketed] word" },
+      "scenario": { "messages": [{ "role": "agent", "text": "Agent text" }] },
+      "progress": { "mockXP": 100, "mockLevel": 2, "mockPercent": 50 },
+      "poll": { "question": "Poll?", "options": [{ "id": "1", "text": "A", "votes": 1 }] },
+      "matching": { "pairs": [{ "id": "1", "left": "L", "right": "R" }] },
+      "sorting": { "items": [{ "id": "1", "text": "Item", "correctOrder": 0 }] },
+      "labeledimage": { "markers": [{ "id": "1", "x": 10, "y": 10, "label": "1", "title": "Title", "description": "Desc" }] }
     }
   ]
 }`
@@ -207,7 +228,7 @@ function buildTextTransformSchema(layoutMode) {
 }
 
 function mapDeckSlideMock(topic, index, count, layoutStrategy, layoutMode) {
-  const layouts = ['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process']
+  const layouts = ['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process', 'cloze', 'scenario', 'progress', 'poll', 'matching', 'sorting', 'labeledimage']
   const chosenLayout = layoutStrategy === 'single'
     ? normalizeLayoutMode(layoutMode)
     : layouts[index % layouts.length]
@@ -292,6 +313,34 @@ function mapDeckSlideMock(topic, index, count, layoutStrategy, layoutMode) {
         { title: 'Refine', detail: 'Measure and improve continuously.' },
       ],
     },
+    cloze: {
+      ...common,
+      cloze: { text: `Understanding [${topic}] requires [practice] and [focus].` },
+    },
+    scenario: {
+      ...common,
+      scenario: { messages: [{ role: 'agent', text: `Welcome to the ${topic} scenario. Are you ready?` }, { role: 'user', text: 'Yes, let us begin.' }] },
+    },
+    progress: {
+      ...common,
+      progress: { mockXP: 450, mockLevel: 5, mockPercent: 75 },
+    },
+    poll: {
+      ...common,
+      poll: { question: `How familiar are you with ${topic}?`, options: [{ id: '1', text: 'Beginner', votes: 15 }, { id: '2', text: 'Intermediate', votes: 20 }, { id: '3', text: 'Advanced', votes: 5 }] },
+    },
+    matching: {
+      ...common,
+      matching: { pairs: [{ id: '1', left: 'Concept 1', right: 'Definition 1' }, { id: '2', left: 'Concept 2', right: 'Definition 2' }] },
+    },
+    sorting: {
+      ...common,
+      sorting: { items: [{ id: '1', text: 'Step 1', correctOrder: 0 }, { id: '2', text: 'Step 2', correctOrder: 1 }, { id: '3', text: 'Step 3', correctOrder: 2 }] },
+    },
+    labeledimage: {
+      ...common,
+      labeledimage: { markers: [{ id: '1', x: 20, y: 30, label: '1', title: 'Part A', description: 'Important detail' }, { id: '2', x: 80, y: 50, label: '2', title: 'Part B', description: 'Another detail' }] },
+    },
   }
 
   return byLayout[chosenLayout] || byLayout.classic
@@ -364,6 +413,34 @@ function buildMockSlideContent(topic, layoutMode) {
         { title: 'Build', detail: 'Create the workflow, content, or system needed.' },
         { title: 'Refine', detail: 'Measure results and improve the weak points.' },
       ],
+    },
+    cloze: {
+      ...common,
+      cloze: { text: `It is essential to understand [${topic || 'the topic'}] and its [impact] on the [business].` },
+    },
+    scenario: {
+      ...common,
+      scenario: { messages: [{ role: 'agent', text: `Welcome to the ${topic || 'scenario'}. What will you do first?` }, { role: 'user', text: `I will analyze ${topic || 'the situation'}.` }] },
+    },
+    progress: {
+      ...common,
+      progress: { mockXP: 750, mockLevel: 6, mockPercent: 80 },
+    },
+    poll: {
+      ...common,
+      poll: { question: `How often do you use ${topic || 'these tools'}?`, options: [{ id: '1', text: 'Daily', votes: 120 }, { id: '2', text: 'Weekly', votes: 85 }] },
+    },
+    matching: {
+      ...common,
+      matching: { pairs: [{ id: '1', left: 'Term A', right: 'Definition A' }, { id: '2', left: 'Term B', right: 'Definition B' }] },
+    },
+    sorting: {
+      ...common,
+      sorting: { items: [{ id: '1', text: 'Phase 1', correctOrder: 0 }, { id: '2', text: 'Phase 2', correctOrder: 1 }, { id: '3', text: 'Phase 3', correctOrder: 2 }] },
+    },
+    labeledimage: {
+      ...common,
+      labeledimage: { markers: [{ id: '1', x: 25, y: 35, label: '1', title: 'Marker 1', description: 'Description 1' }, { id: '2', x: 75, y: 65, label: '2', title: 'Marker 2', description: 'Description 2' }] },
     },
   }
 
@@ -522,6 +599,13 @@ Rules:
             timeline: Array.isArray(slide?.timeline) ? slide.timeline : [],
             faqs: Array.isArray(slide?.faqs) ? slide.faqs : [],
             process: Array.isArray(slide?.process) ? slide.process : [],
+            cloze: slide?.cloze || null,
+            scenario: slide?.scenario || null,
+            progress: slide?.progress || null,
+            poll: slide?.poll || null,
+            matching: slide?.matching || null,
+            sorting: slide?.sorting || null,
+            labeledimage: slide?.labeledimage || null,
           }
         })
     } catch {

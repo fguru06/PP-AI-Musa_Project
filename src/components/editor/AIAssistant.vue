@@ -55,6 +55,55 @@ const CONTENT_LAYOUT_OPTIONS = [
     promptHint: 'Break the topic into three clear steps with actionable descriptions.',
     schema: '{ "layout": "process", "title": "...", "subtitle": "...", "callout": "...", "process": [{ "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }, { "title": "...", "detail": "..." }] }',
   },
+  {
+    id: 'cloze',
+    label: 'Fill-in-the-Blank',
+    hint: 'Interactive fill-in-the-blank text.',
+    promptHint: 'Create an interactive fill-in-the-blank activity. Provide a paragraph with a few key words wrapped in [brackets] to indicate blanks.',
+    schema: '{ "layout": "cloze", "title": "...", "subtitle": "...", "callout": "...", "cloze": { "text": "A sentence about the topic where the [key word] is in brackets." } }',
+  },
+  {
+    id: 'scenario',
+    label: 'Scenario',
+    hint: 'Branching scenario with choices.',
+    promptHint: 'Create a branching scenario. Provide a starting situation from the agent, and 2-3 potential responses from the user.',
+    schema: '{ "layout": "scenario", "title": "...", "subtitle": "...", "callout": "...", "scenario": { "agentMessage": "...", "userOptions": ["..."] } }',
+  },
+  {
+    id: 'progress',
+    label: 'Progress',
+    hint: 'A step-by-step progress indicator.',
+    promptHint: 'Create a progress overview representing the users current learning status. Provide realistic mock values.',
+    schema: '{ "layout": "progress", "title": "...", "subtitle": "...", "callout": "...", "progress": { "level": 4, "xp": 350, "percent": 65 } }',
+  },
+  {
+    id: 'poll',
+    label: 'Poll',
+    hint: 'An interactive poll or survey.',
+    promptHint: 'Create an interactive poll question with 3-4 options. Provide realistic mock vote counts.',
+    schema: '{ "layout": "poll", "title": "...", "subtitle": "...", "callout": "...", "poll": { "question": "...", "options": [{ "text": "...", "votes": 12 }] } }',
+  },
+  {
+    id: 'matching',
+    label: 'Matching',
+    hint: 'A drag-and-drop matching activity.',
+    promptHint: 'Create a matching activity with 3-4 pairs of related concepts (e.g. term and definition).',
+    schema: '{ "layout": "matching", "title": "...", "subtitle": "...", "callout": "...", "matching": { "pairs": [{ "left": "...", "right": "..." }] } }',
+  },
+  {
+    id: 'sorting',
+    label: 'Sorting',
+    hint: 'A sorting activity.',
+    promptHint: 'Create an activity where items need to be sorted into correct order. Provide the items in random order.',
+    schema: '{ "layout": "sorting", "title": "...", "subtitle": "...", "callout": "...", "sorting": { "items": [{ "text": "...", "correctOrder": 0 }] } }',
+  },
+  {
+    id: 'labeledimage',
+    label: 'Labeled Image',
+    hint: 'An image with interactive hotspots.',
+    promptHint: 'Define 2-3 standard hotspots (x, y percentages) with labels and descriptions over a concept.',
+    schema: '{ "layout": "labeledimage", "title": "...", "subtitle": "...", "callout": "...", "labeledimage": { "markers": [{ "x": 25, "y": 35, "label": "1", "title": "...", "description": "..." }] } }',
+  },
 ]
 
 const CONTENT_LAYOUT_BLOCKS = {
@@ -273,7 +322,7 @@ const contentAutoPrompt = computed(() => {
     } else {
       promptText += '\nMix layouts across the deck when appropriate.'
     }
-    promptText += `\nReturn ONLY valid JSON: { "slides": [{ "title": "...", "subtitle": "...", "callout": "...", "slideType": "...", "layout": "classic|cards|comparison|metrics|timeline|faq|process" }] }`
+    promptText += `\nReturn ONLY valid JSON: { "slides": [{ "title": "...", "subtitle": "...", "callout": "...", "slideType": "...", "layout": "classic|cards|comparison|metrics|timeline|faq|process|cloze|scenario|progress|poll|matching|sorting|labeledimage" }] }`
     promptText += `\nMake each slide distinct, logically sequenced, and specific to "${t}".`
     return promptText
   }
@@ -414,6 +463,13 @@ function normalizeSlideContent(content) {
     timeline: normalizeTimeline(parsed.timeline, bullets),
     faqs: normalizeFaqs(parsed.faqs, bullets),
     process: normalizeProcess(parsed.process, bullets),
+    cloze: parsed.cloze || { text: '' },
+    scenario: parsed.scenario || { agentMessage: '', userOptions: [] },
+    progress: parsed.progress || { level: 4, xp: 350, percent: 65 },
+    poll: parsed.poll || { question: '', options: [] },
+    matching: parsed.matching || { pairs: [] },
+    sorting: parsed.sorting || { items: [] },
+    labeledimage: parsed.labeledimage || { markers: [] },
   }
 }
 
@@ -618,6 +674,155 @@ function buildProcessBlock(normalized) {
   return block
 }
 
+function buildGenericInteractiveBlock(normalized, interactiveType, interactiveWidth, interactiveHeight, buildInteractiveContent) {
+  const elements = []
+  
+  // 1. Add Title
+  if (normalized.title) {
+    elements.push({
+      type: 'heading',
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 80,
+      content: { text: normalized.title, fontSize: 36, fontWeight: 'bold', textAlign: 'center', color: '#1a1a2e', fontFamily: 'Inter, sans-serif', lineHeight: 1.2 }
+    })
+  }
+
+  // 2. Add Subtitle
+  let currentY = normalized.title ? 100 : 0
+  if (normalized.subtitle) {
+    elements.push({
+      type: 'text',
+      x: 0,
+      y: currentY,
+      width: 800,
+      height: 40,
+      content: {
+        text: normalized.subtitle,
+        fontSize: 16,
+        fontWeight: '500',
+        textAlign: 'center',
+        color: '#64748b',
+        lineHeight: 1.4,
+        fontFamily: 'Inter, sans-serif',
+      }
+    })
+    currentY += 60
+  }
+
+  // 3. Add Main Element
+  const interactiveX = Math.max(0, (800 - interactiveWidth) / 2)
+  elements.push({
+    type: interactiveType,
+    x: interactiveX,
+    y: currentY,
+    width: interactiveWidth,
+    height: interactiveHeight,
+    content: buildInteractiveContent()
+  })
+  
+  const block = {
+    id: `generated-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`,
+    type: 'group',
+    elements
+  }
+
+  // 4. Add Callout
+  if (normalized.callout) {
+    appendBlockCallout(block, normalized.callout)
+  }
+
+  return block
+}
+
+function buildClozeBlock(normalized) {
+  const cloze = normalized.cloze || {}
+  return buildGenericInteractiveBlock(normalized, 'cloze', 600, 240, () => ({
+    title: 'Fill in the blanks',
+    text: cloze.text || 'An assessment should align closely with the [learning] objectives.',
+    bgColor: '#ffffff', textColor: '#1e293b', fontSize: 16, borderRadius: 8
+  }))
+}
+
+function buildScenarioBlock(normalized) {
+  const scenario = normalized.scenario || {}
+  const agentMsg = scenario.agentMessage || 'Welcome to this scenario. What will you do first?'
+  const userOpts = scenario.userOptions?.length ? scenario.userOptions : ['I will analyze the requirements.']
+  
+  const messages = [ { role: 'agent', text: agentMsg } ]
+  userOpts.forEach(opt => messages.push({ role: 'user', text: typeof opt === 'string' ? opt : opt.text }))
+
+  return buildGenericInteractiveBlock(normalized, 'scenario', 600, 360, () => ({
+    bgColor: '#f8fafc', borderRadius: 8,
+    messages
+  }))
+}
+
+function buildProgressBlock(normalized) {
+  const progress = normalized.progress || {}
+  return buildGenericInteractiveBlock(normalized, 'progress', 400, 200, () => ({
+    title: 'Your Progress', bgColor: '#ffffff', titleColor: '#0f172a', textColor: '#64748b', fillColor: '#10b981', borderRadius: 8, 
+    mockXP: progress.xp || 350, mockLevel: progress.level || 4, mockPercent: progress.percent || 65
+  }))
+}
+
+function buildPollBlock(normalized) {
+  const poll = normalized.poll || {}
+  const options = poll.options?.length ? poll.options : [
+    { text: 'Option A', votes: 12 }, { text: 'Option B', votes: 24 }
+  ]
+  const mappedOptions = options.map((o, idx) => ({ id: String(idx + 1), text: o.text || String(o), votes: o.votes || 0 }))
+  
+  return buildGenericInteractiveBlock(normalized, 'poll', 600, 360, () => ({
+    question: poll.question || 'What is your favorite topic?',
+    options: mappedOptions,
+    showResults: false, barColor: '#cbd5e1', barSelectedColor: '#6c47ff', trackColor: '#f1f5f9', textColor: '#1e293b', bgColor: '#ffffff'
+  }))
+}
+
+function buildMatchingBlock(normalized) {
+  const matching = normalized.matching || {}
+  const pairs = matching.pairs?.length ? matching.pairs : [
+    { left: 'Concept 1', right: 'Detail 1' }, { left: 'Concept 2', right: 'Detail 2' }
+  ]
+  const mappedPairs = pairs.map((p, idx) => ({ id: String(idx + 1), left: p.left, right: p.right }))
+  
+  return buildGenericInteractiveBlock(normalized, 'matching', 600, 360, () => ({
+    title: 'Match the concepts', bgColor: '#ffffff', titleColor: '#0f172a', accentColor: '#6c47ff', accentBgColor: '#f3f0ff',
+    pairs: mappedPairs
+  }))
+}
+
+function buildSortingBlock(normalized) {
+  const sorting = normalized.sorting || {}
+  const items = sorting.items?.length ? sorting.items : [
+    { text: 'Step 1', correctOrder: 0 }, { text: 'Step 2', correctOrder: 1 }
+  ]
+  const mappedItems = items.map((item, idx) => ({ id: String(idx + 1), text: item.text, correctOrder: item.correctOrder ?? idx }))
+  
+  return buildGenericInteractiveBlock(normalized, 'sorting', 500, 360, () => ({
+    title: 'Sort items correctly', bgColor: '#ffffff', titleColor: '#0f172a', accentColor: '#6c47ff',
+    items: mappedItems
+  }))
+}
+
+function buildLabeledImageBlock(normalized) {
+  const labeledimage = normalized.labeledimage || {}
+  const markers = labeledimage.markers?.length ? labeledimage.markers : [
+    { x: 25, y: 35, label: '1', title: 'Point 1', description: 'Description 1' },
+    { x: 75, y: 65, label: '2', title: 'Point 2', description: 'Description 2' }
+  ]
+  const mappedMarkers = markers.map((m, idx) => ({ 
+    id: String(idx + 1), x: m.x || 50, y: m.y || 50, label: m.label || String(idx + 1), title: m.title || `Point ${idx + 1}`, description: m.description || ''
+  }))
+  
+  return buildGenericInteractiveBlock(normalized, 'labeledimage', 600, 400, () => ({
+    src: '', borderRadius: 8, markerColor: '#6c47ff', markerTextColor: '#ffffff',
+    markers: mappedMarkers
+  }))
+}
+
 function buildLayoutBlock(normalized) {
   switch (normalized.layout) {
     case 'cards':
@@ -632,6 +837,20 @@ function buildLayoutBlock(normalized) {
       return buildFaqBlock(normalized)
     case 'process':
       return buildProcessBlock(normalized)
+    case 'cloze':
+      return buildClozeBlock(normalized)
+    case 'scenario':
+      return buildScenarioBlock(normalized)
+    case 'progress':
+      return buildProgressBlock(normalized)
+    case 'poll':
+      return buildPollBlock(normalized)
+    case 'matching':
+      return buildMatchingBlock(normalized)
+    case 'sorting':
+      return buildSortingBlock(normalized)
+    case 'labeledimage':
+      return buildLabeledImageBlock(normalized)
     default:
       return null
   }

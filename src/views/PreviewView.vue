@@ -268,7 +268,7 @@ function elementStyle(el) {
     opacity: el.opacity ?? 1,
     transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
     overflow: 'hidden',
-    pointerEvents: ['button', 'hotspot', 'quiz'].includes(el.type) ? 'auto' : 'none',
+    pointerEvents: ['button', 'hotspot', 'quiz', 'poll', 'matching', 'sorting', 'cloze', 'scenario', 'progress', 'tabs', 'accordion', 'flipcard', 'stepper', 'labeledimage', 'audio', 'video'].includes(el.type) ? 'auto' : 'none',
   }
 }
 

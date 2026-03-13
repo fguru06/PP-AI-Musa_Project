@@ -1225,7 +1225,7 @@ function buildRuntimeJS(mode = 'html') {
 
   function renderElement(el) {
     var interactions = Array.isArray(el.interactions) ? el.interactions.filter(Boolean) : [];
-    var interactive = ['button', 'hotspot', 'quiz', 'video', 'audio'].includes(el.type) || interactions.length > 0;
+    var interactive = ['button', 'hotspot', 'quiz', 'poll', 'matching', 'sorting', 'cloze', 'scenario', 'progress', 'tabs', 'accordion', 'flipcard', 'stepper', 'labeledimage', 'audio', 'video'].includes(el.type) || interactions.length > 0;
     var wrapper = buildElementBox(el, interactive);
     var content = el.content || {};
 

@@ -147,6 +147,14 @@ export function useDashboardAICreation({ onRequireAuth } = {}) {
         .filter(Boolean),
       callout: String(parsed.callout || '').trim(),
       slideType: String(parsed.slideType || 'general').trim(),
+      layout: String(parsed.layout || 'general').trim(),
+      cloze: parsed.cloze || null,
+      scenario: parsed.scenario || null,
+      progress: parsed.progress || null,
+      poll: parsed.poll || null,
+      matching: parsed.matching || null,
+      sorting: parsed.sorting || null,
+      labeledimage: 'labeledimage' in parsed ? parsed.labeledimage : null,
     }
   }
 
@@ -271,35 +279,47 @@ export function useDashboardAICreation({ onRequireAuth } = {}) {
       })
     }
 
-    projectStore.addElement(projectId, slideId, 'shape', {
-      x: 68,
-      y: bulletTop - 26,
-      width: 574,
-      height: cardHeight,
-      content: {
-        shapeType: 'rectangle',
-        fillColor: palette.panel,
-        borderColor: '#dbeafe',
-        borderWidth: 1,
-        borderRadius: 22,
-      },
-    })
+    const isInteractive = ['cloze', 'scenario', 'progress', 'poll', 'matching', 'sorting', 'labeledimage'].includes(normalized.layout)
 
-    if (normalized.bullets.length) {
-      projectStore.addElement(projectId, slideId, 'text', {
-        x: 96,
-        y: bulletTop,
-        width: 520,
-        height: Math.max(cardHeight - 40, 120),
+    if (isInteractive && normalized[normalized.layout]) {
+      projectStore.addElement(projectId, slideId, normalized.layout, {
+        x: 68,
+        y: bulletTop - 26,
+        width: 580,
+        height: Math.max(cardHeight, 360), // give interactive widgets slightly more height by default
+        content: normalized[normalized.layout]
+      })
+    } else {
+      projectStore.addElement(projectId, slideId, 'shape', {
+        x: 68,
+        y: bulletTop - 26,
+        width: 574,
+        height: cardHeight,
         content: {
-          text: normalized.bullets.map(item => `• ${item}`).join('\n'),
-          fontSize: 18,
-          textAlign: 'left',
-          color: '#1e293b',
-          fontFamily: 'Inter, sans-serif',
-          lineHeight: 1.8,
+          shapeType: 'rectangle',
+          fillColor: palette.panel,
+          borderColor: '#dbeafe',
+          borderWidth: 1,
+          borderRadius: 22,
         },
       })
+
+      if (normalized.bullets.length) {
+        projectStore.addElement(projectId, slideId, 'text', {
+          x: 96,
+          y: bulletTop,
+          width: 520,
+          height: Math.max(cardHeight - 40, 120),
+          content: {
+            text: normalized.bullets.map(item => `• ${item}`).join('\n'),
+            fontSize: 18,
+            textAlign: 'left',
+            color: '#1e293b',
+            fontFamily: 'Inter, sans-serif',
+            lineHeight: 1.8,
+          },
+        })
+      }
     }
 
     projectStore.addElement(projectId, slideId, 'shape', {

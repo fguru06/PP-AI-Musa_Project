@@ -13,12 +13,13 @@ const parsedParts = computed(() => {
   const regex = /\[([^\]]+)\]/g
   let lastIdx = 0
   let match
+  let blankIndex = 0
 
   while ((match = regex.exec(text.value)) !== null) {
     if (match.index > lastIdx) {
       parts.push({ type: 'text', val: text.value.substring(lastIdx, match.index) })
     }
-    parts.push({ type: 'blank', val: match[1] })
+    parts.push({ type: 'blank', val: match[1], id: blankIndex++ })
     lastIdx = regex.lastIndex
   }
   if (lastIdx < text.value.length) {
@@ -28,9 +29,23 @@ const parsedParts = computed(() => {
 })
 
 const inputs = ref({})
+const submitted = ref(false)
+const results = ref({})
 
 function checkAnswers() {
-  // Real check would happen in preview, here we just visual feedback mock
+  submitted.value = true
+  parsedParts.value.forEach(p => {
+    if (p.type === 'blank') {
+      const isCorrect = (inputs.value[p.id] || '').trim().toLowerCase() === p.val.trim().toLowerCase()
+      results.value[p.id] = isCorrect
+    }
+  })
+}
+
+function resetAnswers() {
+  submitted.value = false
+  inputs.value = {}
+  results.value = {}
 }
 
 </script>
@@ -44,17 +59,22 @@ function checkAnswers() {
     <h3 v-if="element.content?.title" :style="{ color: element.content?.titleColor || '#0f172a' }">{{ element.content.title }}</h3>
     <div class="cloze-content" :style="{ fontSize: (element.content?.fontSize || 16) + 'px' }">
       <template v-for="(p, i) in parsedParts" :key="i">
-        <span v-if="p.type === 'text'">{{ p.val }}</span>
-        <input v-else 
-          type="text" 
-          class="blank-input" 
+        <span v-if="p.type === 'text'" style="white-space: pre-wrap;">{{ p.val }}</span>
+        <input v-else
+          type="text"
+          class="blank-input"
+          :class="{ correct: submitted && results[p.id], incorrect: submitted && !results[p.id] }"
           :placeholder="'?'"
-          :style="{ width: ((p.val.length * 10) + 16) + 'px' }"
-          disabled
+          :style="{ width: ((p.val.length * 10) + 16) + 'px', pointerEvents: 'auto' }"
+          v-model="inputs[p.id]"
+          :readonly="submitted"
         />
       </template>
     </div>
-    <button v-if="element.content?.showCheckBtn !== false" class="check-btn" disabled>Check Answers</button>
+    <div style="display: flex; gap: 8px;">
+      <button v-if="!submitted && element.content?.showCheckBtn !== false" class="check-btn" @mousedown="checkAnswers">Check Answers</button>
+      <button v-if="submitted" class="check-btn secondary" @mousedown="resetAnswers">Try Again</button>
+      </div>
   </div>
 </template>
 
@@ -86,6 +106,17 @@ h3 {
   text-align: center;
   color: #334155;
   margin: 0 4px;
+  transition: all 0.2s;
+}
+.blank-input.correct {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  color: #15803d;
+}
+.blank-input.incorrect {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #b91c1c;
 }
 .check-btn {
   display: inline-block;
@@ -95,7 +126,19 @@ h3 {
   border: none;
   border-radius: 6px;
   font-weight: 500;
-  opacity: 0.8;
-  cursor: default;
+  opacity: 0.9;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.check-btn:hover {
+  opacity: 1;
+}
+.check-btn.secondary {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.check-btn.secondary:hover {
+  background: #e2e8f0;
 }
 </style>
