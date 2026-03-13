@@ -110,13 +110,24 @@ async function requestGemini(apiKey, prompt, context) {
 async function requestGeminiImage(apiKey, prompt) {
   // Gemini's free tier does not support image generation via the Developer API.
   // We use Pollinations.ai as a free, high-quality fallback for image generation.
-  // It returns the image directly as a URL.
   const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=683&nologo=true`
   
-  // To ensure the image is loaded, we can just return the URL directly, 
-  // or fetch it to convert to base64 if needed. Returning the URL is usually fine 
-  // for the canvas/image element in this tool.
-  return imageUrl
+  try {
+    // Fetch it so we can convert it to a base64 data URI (to avoid CORS issues in canvas exports)
+    const response = await fetch(imageUrl)
+    if (!response.ok) throw new Error('Failed to fetch image')
+    
+    const blob = await response.blob()
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch (err) {
+    console.error("Pollinations image fetch failed, returning URL directly", err)
+    return imageUrl
+  }
 }
 
 function normalizeLayoutMode(layoutMode) {
