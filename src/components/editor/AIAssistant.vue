@@ -844,13 +844,14 @@ async function applyQuiz() {
       projectStore.addElement(pid, slide.id, 'quiz', {
         x: 60, y: 80, width: 840, height: 380,
         content: {
-          question: q.question,
-          options: q.options,
-          correctIndex: q.correctIndex,
+          question: q.question || 'Untitled Question',
+          options: Array.isArray(q.options) ? q.options : ['True', 'False'],
+          correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : 0,
           explanation: q.explanation || ''
         }
       })
-      projectStore.updateSlide(pid, slide.id, { title: `Q${i + 1}: ${q.question.slice(0, 40)}…` })
+      const qText = typeof q.question === 'string' ? q.question : 'Quiz'
+      projectStore.updateSlide(pid, slide.id, { title: `Q${i + 1}: ${qText.slice(0, 40)}…` })
     }
   })
   quizQuestions.value = []
