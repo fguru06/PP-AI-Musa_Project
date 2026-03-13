@@ -8,7 +8,7 @@
     "build:local": "vite build",
     "preview": "vite preview",
     "deploy": "npm run build",
-    "publish:pages": "gh-pages -d dist -b gh-pages -r https://github.com/fguru06/PP-AI-Authoring-Tool.git"
+    "publish:pages": "gh-pages -d dist -b gh-pages -r https://github.com/fguru06/PP-AI-Musa_Project.git"
   },
   "dependencies": {
     "driver.js": "^1.4.0",
