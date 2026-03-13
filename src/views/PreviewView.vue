@@ -5,6 +5,17 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useAuthStore } from '@/stores/authStore'
 import { formatCanvasAspectRatio, getProjectCanvasSize, matchCanvasSizePreset } from '@/lib/canvas'
 import ChartElement from '@/components/editor/elements/ChartElement.vue'
+import TabsElement from '@/components/editor/elements/TabsElement.vue'
+import AccordionElement from '@/components/editor/elements/AccordionElement.vue'
+import FlipCardElement from '@/components/editor/elements/FlipCardElement.vue'
+import StepperElement from '@/components/editor/elements/StepperElement.vue'
+import PollElement from '@/components/editor/elements/PollElement.vue'
+import LabeledImageElement from '@/components/editor/elements/LabeledImageElement.vue'
+import MatchingElement from '@/components/editor/elements/MatchingElement.vue'
+import SortingElement from '@/components/editor/elements/SortingElement.vue'
+import ClozeElement from '@/components/editor/elements/ClozeElement.vue'
+import ScenarioElement from '@/components/editor/elements/ScenarioElement.vue'
+import ProgressElement from '@/components/editor/elements/ProgressElement.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -329,6 +340,69 @@ const hotspotOpen = ref({})
 function toggleHotspot(elId) {
   hotspotOpen.value[elId] = !hotspotOpen.value[elId]
 }
+
+// Interaction runtime state
+const hiddenElements = ref({}) // store elements toggled to hide
+const completedActivities = ref({})
+
+function hasInteraction(el, trigger) {
+  return el.interactions?.some(i => i.trigger === trigger)
+}
+
+function handleInteraction(el, trigger) {
+  if (!el.interactions) return
+  const evts = el.interactions.filter(i => i.trigger === trigger)
+  evts.forEach(it => {
+    runInteractionAction(it.action, it.value, el.id)
+  })
+}
+
+function runInteractionAction(action, value, sourceId) {
+  if (action === 'navigate') {
+    if (value === 'next') goNext()
+    else if (value === 'prev') goPrev()
+    else {
+      const idx = parseInt(value, 10)
+      if (!isNaN(idx) && idx >= 0 && idx < slides.value.length) {
+        goTo(idx)
+      }
+    }
+  } else if (action === 'openUrl') {
+    window.open(value, '_blank')
+  } else if (action === 'showPopup') {
+    alert(value) // simple temp replacement for a real popup
+  } else if (action === 'playAudio') {
+    // Note: robust audio requires an audio manager
+  } else if (action === 'pauseVideo') {
+    // Note: requires video refs tracking
+  } else if (action === 'toggleElement') {
+    if (value) {
+      hiddenElements.value[value] = !hiddenElements.value[value]
+    }
+  } else if (action === 'completeActivity') {
+    completedActivities.value[sourceId] = true
+  }
+}
+
+// Reset states on slide change
+watch(currentIndex, () => {
+  hiddenElements.value = {}
+  quizAnswers.value = {}
+  quizSubmitted.value = {}
+  completedActivities.value = {}
+  
+  setTimeout(() => {
+    if (currentSlideElements.value) {
+      currentSlideElements.value.forEach(el => {
+        if (el.interactions) {
+          el.interactions.filter(i => i.trigger === 'load').forEach(it => {
+            runInteractionAction(it.action, it.value, el.id)
+          })
+        }
+      })
+    }
+  }, 50)
+}, { immediate: true })
 </script>
 
 <template>
@@ -373,9 +447,11 @@ function toggleHotspot(elId) {
             <!-- Elements -->
             <template v-for="(el, index) in currentSlideElements" :key="el.id">
               <div
-                v-if="el.visible !== false"
-                :class="['preview-element', `motion-${elementMotionPreset(el)}`]"
+                v-if="el.visible !== false && !hiddenElements[el.id]"
+                :class="['preview-element', `motion-${elementMotionPreset(el)}`, { 'interactable': hasInteraction(el, 'click'), 'completed': completedActivities[el.id] }]"
                 :style="animatedElementStyle(el, index)"
+                @click="hasInteraction(el, 'click') ? handleInteraction(el, 'click') : null"
+                @mouseenter="hasInteraction(el, 'hover') ? handleInteraction(el, 'hover') : null"
               >
 
             <!-- Text / Heading -->
@@ -427,6 +503,17 @@ function toggleHotspot(elId) {
             </div>
 
             <ChartElement v-else-if="el.type === 'chart'" :element="el" :theme="project?.theme || {}" />
+            <TabsElement v-else-if="el.type === 'tabs'" :element="el" />
+            <AccordionElement v-else-if="el.type === 'accordion'" :element="el" />
+            <FlipCardElement v-else-if="el.type === 'flipcard'" :element="el" />
+            <StepperElement v-else-if="el.type === 'stepper'" :element="el" />
+            <PollElement v-else-if="el.type === 'poll'" :element="el" />
+            <LabeledImageElement v-else-if="el.type === 'labeledimage'" :element="el" />
+            <MatchingElement v-else-if="el.type === 'matching'" :element="el" />
+            <SortingElement v-else-if="el.type === 'sorting'" :element="el" />
+            <ClozeElement v-else-if="el.type === 'cloze'" :element="el" />
+            <ScenarioElement v-else-if="el.type === 'scenario'" :element="el" />
+            <ProgressElement v-else-if="el.type === 'progress'" :element="el" />
 
             <!-- Button -->
             <div v-else-if="el.type === 'button'" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
@@ -722,6 +809,33 @@ function toggleHotspot(elId) {
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity, transform, filter;
+  transition: filter 0.2s, transform 0.2s;
+}
+.preview-element.interactable {
+  cursor: pointer;
+}
+.preview-element.interactable:hover {
+  filter: brightness(0.95);
+  transform: scale(1.02);
+}
+.preview-element.completed::after {
+  content: '✓';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: #10b981;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  z-index: 10;
+  animation: pop-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .motion-fade-up {

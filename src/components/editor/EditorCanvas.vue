@@ -14,6 +14,17 @@ import VideoElement from './elements/VideoElement.vue'
 import AudioElement from './elements/AudioElement.vue'
 import QuizElement from './elements/QuizElement.vue'
 import ChartElement from './elements/ChartElement.vue'
+import TabsElement from './elements/TabsElement.vue'
+import AccordionElement from './elements/AccordionElement.vue'
+import FlipCardElement from './elements/FlipCardElement.vue'
+import StepperElement from './elements/StepperElement.vue'
+import PollElement from './elements/PollElement.vue'
+import LabeledImageElement from './elements/LabeledImageElement.vue'
+import MatchingElement from './elements/MatchingElement.vue'
+import SortingElement from './elements/SortingElement.vue'
+import ClozeElement from './elements/ClozeElement.vue'
+import ScenarioElement from './elements/ScenarioElement.vue'
+import ProgressElement from './elements/ProgressElement.vue'
 
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
@@ -597,6 +608,17 @@ const elementComponents = {
   audio: AudioElement,
   quiz: QuizElement,
   chart: ChartElement,
+  tabs: TabsElement,
+  accordion: AccordionElement,
+  flipcard: FlipCardElement,
+  stepper: StepperElement,
+  poll: PollElement,
+  labeledimage: LabeledImageElement,
+  matching: MatchingElement,
+  sorting: SortingElement,
+  cloze: ClozeElement,
+  scenario: ScenarioElement,
+  progress: ProgressElement,
   divider: 'div',
 }
 

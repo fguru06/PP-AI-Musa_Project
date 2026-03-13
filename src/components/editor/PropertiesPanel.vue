@@ -127,6 +127,14 @@ function updateContent(patch) {
   update({ content: newContent })
 }
 
+function tryParseJSON(val, fallback) {
+  try {
+    return JSON.parse(val)
+  } catch (e) {
+    return fallback
+  }
+}
+
 function updateGeometry(key, rawVal) {
   const val = parseFloat(rawVal)
   if (isNaN(val)) return
@@ -1702,6 +1710,273 @@ const fontFamilies = [
         <div class="form-group" style="margin-top:var(--space-3)">
           <label class="form-label">Accent Color</label>
           <input type="color" :value="selectedEl.content?.accentColor || '#6c47ff'" class="color-input-native" @input="updateContent({ accentColor: $event.target.value })" />
+        </div>
+      </div>
+
+      <!-- Tabs Element -->
+      <div v-else-if="selectedEl.type === 'tabs'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Tabs Configuration</div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Tabs Data (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.tabs || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px; white-space: pre;"
+            @change="updateContent({ tabs: tryParseJSON($event.target.value, selectedEl.content?.tabs) })"
+          />
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr; margin-top:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Active Tab</label>
+            <input type="color" :value="selectedEl.content?.activeTabColor || '#6c47ff'" class="color-input-native" @input="updateContent({ activeTabColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Inactive Tab</label>
+            <input type="color" :value="selectedEl.content?.inactiveTabColor || '#f8fafc'" class="color-input-native" @input="updateContent({ inactiveTabColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Content Bg</label>
+            <input type="color" :value="selectedEl.content?.contentBgColor || '#ffffff'" class="color-input-native" @input="updateContent({ contentBgColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Text Color</label>
+            <input type="color" :value="selectedEl.content?.textColor || '#1e293b'" class="color-input-native" @input="updateContent({ textColor: $event.target.value })" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Accordion Element -->
+      <div v-else-if="selectedEl.type === 'accordion'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Accordion Configuration</div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Items Data (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.items || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px; white-space: pre;"
+            @change="updateContent({ items: tryParseJSON($event.target.value, selectedEl.content?.items) })"
+          />
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr; margin-top:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Active Bg Color</label>
+            <input type="color" :value="selectedEl.content?.activeBgColor || '#f8fafc'" class="color-input-native" @input="updateContent({ activeBgColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Active Title Color</label>
+            <input type="color" :value="selectedEl.content?.activeColor || '#6c47ff'" class="color-input-native" @input="updateContent({ activeColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Item Bg Color</label>
+            <input type="color" :value="selectedEl.content?.itemBgColor || '#ffffff'" class="color-input-native" @input="updateContent({ itemBgColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Text Color</label>
+            <input type="color" :value="selectedEl.content?.textColor || '#475569'" class="color-input-native" @input="updateContent({ textColor: $event.target.value })" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Flip Card Element -->
+      <div v-else-if="selectedEl.type === 'flipcard'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Flip Card Content</div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Direction</label>
+          <select :value="selectedEl.content?.flipDirection || 'horizontal'" class="select" @change="updateContent({ flipDirection: $event.target.value })">
+            <option value="horizontal">Horizontal (Y-axis)</option>
+            <option value="vertical">Vertical (X-axis)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Front Title</label>
+          <input type="text" :value="selectedEl.content?.frontTitle" class="input" @input="updateContent({ frontTitle: $event.target.value })" />
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Front Content</label>
+          <textarea :value="selectedEl.content?.frontContent" class="textarea" @input="updateContent({ frontContent: $event.target.value })" />
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Back Title</label>
+          <input type="text" :value="selectedEl.content?.backTitle" class="input" @input="updateContent({ backTitle: $event.target.value })" />
+        </div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Back Content</label>
+          <textarea :value="selectedEl.content?.backContent" class="textarea" @input="updateContent({ backContent: $event.target.value })" />
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr; margin-top:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Front Bg</label>
+            <input type="color" :value="selectedEl.content?.frontBgColor || '#6c47ff'" class="color-input-native" @input="updateContent({ frontBgColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Front Text</label>
+            <input type="color" :value="selectedEl.content?.frontTextColor || '#ffffff'" class="color-input-native" @input="updateContent({ frontTextColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Back Bg</label>
+            <input type="color" :value="selectedEl.content?.backBgColor || '#ffffff'" class="color-input-native" @input="updateContent({ backBgColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Back Text</label>
+            <input type="color" :value="selectedEl.content?.backTextColor || '#1e293b'" class="color-input-native" @input="updateContent({ backTextColor: $event.target.value })" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Stepper Element -->
+      <div v-else-if="selectedEl.type === 'stepper'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Stepper Configuration</div>
+        <div class="form-group" style="margin-bottom:var(--space-3)">
+          <label class="form-label">Steps Data (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.steps || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px; white-space: pre;"
+            @change="updateContent({ steps: tryParseJSON($event.target.value, selectedEl.content?.steps) })"
+          />
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr; margin-top:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Background</label>
+            <input type="color" :value="selectedEl.content?.bgColor || '#ffffff'" class="color-input-native" @input="updateContent({ bgColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Accent Color</label>
+            <input type="color" :value="selectedEl.content?.accentColor || '#6c47ff'" class="color-input-native" @input="updateContent({ accentColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Title Color</label>
+            <input type="color" :value="selectedEl.content?.titleColor || '#0f172a'" class="color-input-native" @input="updateContent({ titleColor: $event.target.value })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Text Color</label>
+            <input type="color" :value="selectedEl.content?.textColor || '#475569'" class="color-input-native" @input="updateContent({ textColor: $event.target.value })" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Poll Element -->
+      <div v-else-if="selectedEl.type === 'poll'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Poll Configuration</div>
+        <div class="form-group">
+          <label class="form-label">Question</label>
+          <input type="text" :value="selectedEl.content?.question || ''" class="input" @input="updateContent({ question: $event.target.value })" />
+        </div>
+        <div class="form-group" style="margin-top:var(--space-3)">
+          <label class="form-label">Options (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.options || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px;"
+            @change="updateContent({ options: tryParseJSON($event.target.value, selectedEl.content?.options) })"
+          />
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr; margin-top:var(--space-3)">
+          <div class="form-group">
+            <label class="form-label">Voted Color</label>
+            <input type="color" :value="selectedEl.content?.votedColor || '#6c47ff'" class="color-input-native" @input="updateContent({ votedColor: $event.target.value })" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Labeled Image Element -->
+      <div v-else-if="selectedEl.type === 'labeledimage'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Labeled Image Configuration</div>
+        <div class="form-group">
+          <label class="form-label">Image URL</label>
+          <input type="text" :value="selectedEl.content?.imageUrl || ''" class="input" @input="updateContent({ imageUrl: $event.target.value })" />
+        </div>
+        <div class="form-group" style="margin-top:var(--space-3)">
+          <label class="form-label">Markers (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.markers || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px;"
+            @change="updateContent({ markers: tryParseJSON($event.target.value, selectedEl.content?.markers) })"
+          />
+        </div>
+      </div>
+
+      <!-- Matching Element -->
+      <div v-else-if="selectedEl.type === 'matching'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Matching Configuration</div>
+        <div class="form-group">
+          <label class="form-label">Pairs (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.pairs || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px;"
+            @change="updateContent({ pairs: tryParseJSON($event.target.value, selectedEl.content?.pairs) })"
+          />
+        </div>
+      </div>
+
+      <!-- Sorting Element -->
+      <div v-else-if="selectedEl.type === 'sorting'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Sorting Configuration</div>
+        <div class="form-group">
+          <label class="form-label">Items (JSON) - Target Order</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.items || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px;"
+            @change="updateContent({ items: tryParseJSON($event.target.value, selectedEl.content?.items) })"
+          />
+        </div>
+      </div>
+
+      <!-- Cloze Element -->
+      <div v-else-if="selectedEl.type === 'cloze'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Cloze Configuration</div>
+        <div class="form-group">
+          <label class="form-label">Text (Wrap blanks in [ ])</label>
+          <textarea
+            :value="selectedEl.content?.text || ''"
+            class="textarea"
+            style="min-height:100px; font-family: monospace; font-size: 12px;"
+            @change="updateContent({ text: $event.target.value })"
+          />
+        </div>
+        <div class="form-group" style="margin-top:var(--space-3)">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="showCheckBtn" :checked="selectedEl.content?.showCheckBtn !== false" @change="updateContent({ showCheckBtn: $event.target.checked })" />
+            <label for="showCheckBtn" class="form-label mb-0">Show Check Answers Button</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scenario Element -->
+      <div v-else-if="selectedEl.type === 'scenario'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Scenario Chat</div>
+        <div class="form-group">
+          <label class="form-label">Messages (JSON)</label>
+          <textarea
+            :value="JSON.stringify(selectedEl.content?.messages || [], null, 2)"
+            class="textarea"
+            style="min-height:160px; font-family: monospace; font-size: 11px;"
+            @change="updateContent({ messages: tryParseJSON($event.target.value, selectedEl.content?.messages) })"
+          />
+        </div>
+      </div>
+
+      <!-- Progress Element -->
+      <div v-else-if="selectedEl.type === 'progress'" :class="['panel-section', focusedSection === 'content' && 'panel-section-focused']" data-props-anchor="content">
+        <div class="panel-title">Progress Settings</div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr">
+          <div class="form-group">
+            <label class="form-label">Mock XP</label>
+            <input type="number" :value="selectedEl.content?.mockXP || 350" class="input" @input="updateContent({ mockXP: Number($event.target.value) })" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mock Percent</label>
+            <input type="number" :value="selectedEl.content?.mockPercent || 65" class="input" @input="updateContent({ mockPercent: Number($event.target.value) })" />
+          </div>
+        </div>
+        <div class="geo-grid" style="grid-template-columns:1fr 1fr; margin-top:var(--space-2)">
+            <div class="form-group">
+              <label class="form-label">Fill Color</label>
+              <input type="color" :value="selectedEl.content?.fillColor || '#10b981'" class="color-input-native" @input="updateContent({ fillColor: $event.target.value })" />
+            </div>
         </div>
       </div>
 

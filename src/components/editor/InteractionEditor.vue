@@ -22,15 +22,43 @@ function close() {
 }
 
 const TRIGGERS = ['click', 'hover', 'load']
-const ACTIONS = ['navigate', 'openUrl', 'showPopup', 'playAudio', 'pauseVideo']
+const ACTIONS = ['navigate', 'openUrl', 'showPopup', 'playAudio', 'pauseVideo', 'toggleElement', 'completeActivity']
 const TRIGGER_LABELS = { click: 'On Click', hover: 'On Hover', load: 'On Slide Load' }
-const ACTION_LABELS = { navigate: 'Go to Slide', openUrl: 'Open URL', showPopup: 'Show Popup', playAudio: 'Play Audio', pauseVideo: 'Pause Video' }
+const ACTION_LABELS = { 
+  navigate: 'Go to Slide', 
+  openUrl: 'Open URL', 
+  showPopup: 'Show Popup', 
+  playAudio: 'Play Audio', 
+  pauseVideo: 'Pause Video',
+  toggleElement: 'Toggle Element (ID)',
+  completeActivity: 'Mark Completed'
+}
 
 function addInteraction() {
   const updated = [...interactions.value, { trigger: 'click', action: 'navigate', value: '' }]
   projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, editorStore.interactionElementId, {
     interactions: updated
   })
+}
+
+function applyPreset(presetName) {
+  let newInteraction = null;
+  if (presetName === 'next_slide') {
+    newInteraction = { trigger: 'click', action: 'navigate', value: 'next' }
+  } else if (presetName === 'prev_slide') {
+    newInteraction = { trigger: 'click', action: 'navigate', value: 'prev' }
+  } else if (presetName === 'show_info') {
+    newInteraction = { trigger: 'click', action: 'showPopup', value: 'More info about this...' }
+  } else if (presetName === 'learn_complete') {
+    newInteraction = { trigger: 'click', action: 'completeActivity', value: '' }
+  }
+
+  if (newInteraction) {
+    const updated = [...interactions.value, newInteraction]
+    projectStore.updateElement(editorStore.projectId, editorStore.currentSlideId, editorStore.interactionElementId, {
+      interactions: updated
+    })
+  }
 }
 
 function updateInteraction(idx, patch) {
@@ -54,6 +82,15 @@ function removeInteraction(idx) {
       <div v-if="!el" class="empty-state">No element selected.</div>
       <template v-else>
         <p class="hint">Add interactions to <strong>{{ el.type }}</strong> elements. They activate in Preview mode.</p>
+
+        <div class="presets-row">
+          <span class="presets-label">Presets:</span>
+          <button class="btn btn-sm btn-secondary" @click="applyPreset('prev_slide')">Prev Slide</button>
+          <button class="btn btn-sm btn-secondary" @click="applyPreset('next_slide')">Next Slide</button>
+          <button class="btn btn-sm btn-secondary" @click="applyPreset('show_info')">Info Popup</button>
+          <button class="btn btn-sm btn-secondary" @click="applyPreset('learn_complete')">Complete Action</button>
+        </div>
+        <hr class="divider" />
 
         <div v-for="(it, idx) in interactions" :key="idx" class="interaction-row">
           <div class="form-group">
@@ -103,6 +140,23 @@ function removeInteraction(idx) {
   color: var(--color-text-muted);
   text-align: center;
   padding: var(--space-8);
+}
+.presets-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.presets-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-right: 4px;
+}
+.divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-2) 0;
 }
 .interaction-row {
   display: flex;
