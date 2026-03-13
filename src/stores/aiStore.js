@@ -6,6 +6,7 @@ const SUPPORTED_AI_PROVIDERS = new Set(['openai', 'gemini'])
 const PROVIDER_MODELS = {
   openai: 'gpt-4o-mini',
   gemini: 'gemini-2.0-flash',
+  geminiImage: 'gemini-2.5-flash-image',
 }
 
 function normalizeProvider(provider) {
@@ -37,6 +38,23 @@ function extractGeminiText(data) {
     .trim()
 
   return text || ''
+}
+
+function extractGeminiImageData(data) {
+  const parts = Array.isArray(data?.candidates)
+    ? data.candidates.flatMap((candidate) => candidate?.content?.parts || [])
+    : []
+
+  for (const part of parts) {
+    const inlineData = part?.inlineData || part?.inline_data
+    const mimeType = inlineData?.mimeType || inlineData?.mime_type
+    const imageData = inlineData?.data
+    if (mimeType?.startsWith('image/') && imageData) {
+      return `data:${mimeType};base64,${imageData}`
+    }
+  }
+
+  return null
 }
 
 async function requestOpenAI(apiKey, prompt, context) {
@@ -103,6 +121,38 @@ async function requestGemini(apiKey, prompt, context) {
   }
 
   return { text, model }
+}
+
+async function requestGeminiImage(apiKey, prompt) {
+  const model = PROVIDER_MODELS.geminiImage
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: {
+          aspectRatio: '3:2',
+        },
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(extractErrorMessage(err, `HTTP ${response.status}`))
+  }
+
+  const data = await response.json()
+  const imageData = extractGeminiImageData(data)
+  if (!imageData) {
+    throw new Error(extractErrorMessage(data, 'Gemini did not return an image.'))
+  }
+
+  return imageData
 }
 
 function normalizeLayoutMode(layoutMode) {
@@ -638,12 +688,17 @@ Make it suitable for AI image generation (like Midjourney or DALL-E). Ensure the
 
   async function generateImageAsset(promptText) {
     const prompt = String(promptText || '').trim()
-    if (!prompt || !apiKey.value || apiProvider.value !== 'openai') return null
+    if (!prompt || !apiKey.value) return null
 
     isGenerating.value = true
     lastError.value = ''
 
     try {
+      const provider = normalizeProvider(apiProvider.value)
+      if (provider === 'gemini') {
+        return await requestGeminiImage(apiKey.value, prompt)
+      }
+
       const response = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST',
         headers: {

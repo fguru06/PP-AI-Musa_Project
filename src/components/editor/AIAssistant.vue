@@ -224,7 +224,7 @@ const providerDisplayName = computed(() => (aiStore.apiProvider === 'gemini' ? '
 const providerKeyPlaceholder = computed(() => (aiStore.apiProvider === 'gemini' ? 'AIza...' : 'sk-...'))
 const providerKeyHint = computed(() => (
   aiStore.apiProvider === 'gemini'
-    ? 'Gemini API keys from Google AI Studio can use the free tier for text features. The key is stored locally in your browser and never sent to our servers.'
+    ? 'Gemini API keys from Google AI Studio can use the free tier for supported features. The key is stored locally in your browser and never sent to our servers.'
     : 'Key is stored locally in your browser. It is never sent to our servers.'
 ))
 
@@ -916,24 +916,25 @@ function withTimeout(promise, timeoutMs) {
 function getImageGenerationFailureMessage(rawError) {
   const message = String(rawError || '').trim()
   const normalized = message.toLowerCase()
+  const providerName = providerDisplayName.value
 
   if (!message) {
-    return 'OpenAI image generation did not return an image. Try a simpler prompt or try again in a moment.'
+    return `${providerName} image generation did not return an image. Try a simpler prompt or try again in a moment.`
   }
 
   if (normalized.includes('billing hard limit') || normalized.includes('billing') || normalized.includes('quota') || normalized.includes('insufficient_quota')) {
-    return 'Your OpenAI account cannot generate images right now because its billing or quota limit has been reached. Update billing in OpenAI, then try again.'
+    return `Your ${providerName} account cannot generate images right now because its billing or quota limit has been reached. Update billing or wait for quota reset, then try again.`
   }
 
   if (normalized.includes('invalid api key') || normalized.includes('incorrect api key') || normalized.includes('unauthorized')) {
-    return 'The OpenAI API key appears invalid for image generation. Check the key in API settings and try again.'
+    return `The ${providerName} API key appears invalid for image generation. Check the key in API settings and try again.`
   }
 
   if (normalized.includes('rate limit') || normalized.includes('too many requests')) {
-    return 'OpenAI rate-limited the image request. Wait a moment and try again.'
+    return `${providerName} rate-limited the image request. Wait a moment and try again.`
   }
 
-  return `OpenAI image generation failed: ${message}`
+  return `${providerName} image generation failed: ${message}`
 }
 
 async function generateAiImage() {
@@ -942,8 +943,8 @@ async function generateAiImage() {
   result.value = 'Preparing image prompt...'
 
   try {
-    if (!aiStore.apiKey || aiStore.apiProvider !== 'openai') {
-      result.value = 'AI image generation requires an OpenAI API key in API settings. No fallback image was inserted.'
+    if (!aiStore.apiKey) {
+      result.value = `AI image generation requires a ${providerDisplayName.value} API key in API settings. No fallback image was inserted.`
       return
     }
 
@@ -974,12 +975,12 @@ async function generateAiImage() {
         src: aiGeneratedSrc,
         fallbackSrcs: [],
         alt: imageTopic.value.trim() || 'AI generated image',
-        sourceType: 'openai-image',
+        sourceType: `${aiStore.apiProvider}-image`,
         objectFit: 'cover',
       }
     })
 
-    result.value = 'AI image added to slide using OpenAI image generation.'
+    result.value = `AI image added to slide using ${providerDisplayName.value} image generation.`
   } catch (error) {
     result.value = getImageGenerationFailureMessage(error?.message || aiStore.lastError)
   } finally {
@@ -1454,15 +1455,15 @@ async function runFreePrompt() {
       <!-- Image Generation -->
       <template v-else-if="activeMode === 'image'">
         <p class="ai-hint" style="margin-bottom:var(--space-3)">Generate distinct educational visual assets instantly. The image will be added directly to your slide.</p>
-        <div v-if="!aiStore.apiKey || aiStore.apiProvider !== 'openai'" class="ai-error" style="margin-bottom: var(--space-3)">
+        <div v-if="!aiStore.apiKey" class="ai-error" style="margin-bottom: var(--space-3)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          AI image generation needs an OpenAI API key in API settings. Gemini support in this app is text-only.
+          AI image generation needs a {{ providerDisplayName }} API key in API settings.
         </div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Image Description</label>
           <textarea v-model="imageTopic" class="textarea" style="min-height:100px" placeholder="Describe the image (e.g. 'A futuristic city skyline at sunset in a vibrant retro style')" />
         </div>
-<button class="btn btn-primary w-full ai-generate-btn" :disabled="isImageGenerating || aiStore.isGenerating || !imageTopic || !aiStore.apiKey || aiStore.apiProvider !== 'openai'" @click="generateAiImage">
+<button class="btn btn-primary w-full ai-generate-btn" :disabled="isImageGenerating || aiStore.isGenerating || !imageTopic || !aiStore.apiKey" @click="generateAiImage">
             <span v-if="isImageGenerating || aiStore.isGenerating" class="spinner" />
             {{ (isImageGenerating || aiStore.isGenerating) ? 'Generating Image…' : 'Generate & Insert' }}
         </button>
@@ -1498,7 +1499,7 @@ async function runFreePrompt() {
           </div>
           <div v-if="aiStore.apiProvider === 'gemini'" class="demo-notice">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            Gemini is enabled for text tasks in this app: content, quiz, voiceover, improve, and translate. Image generation remains OpenAI-only.
+            Gemini is enabled for content, quiz, voiceover, improve, translate, and image generation in this app.
           </div>
           <div v-if="!aiStore.apiKey" class="demo-notice">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
