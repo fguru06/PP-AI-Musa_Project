@@ -1,13 +1,14 @@
 import {
   createUserWithEmailAndPassword,
   getAuth,
+  getRedirectResult,
   GoogleAuthProvider,
   OAuthProvider,
   onAuthStateChanged,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
   signOut,
 } from 'firebase/auth'
 import { getFirebaseApp } from './app'
@@ -21,7 +22,8 @@ export function getFirebaseAuthServices() {
       auth: getAuth(app),
       googleProvider: new GoogleAuthProvider(),
       microsoftProvider: new OAuthProvider('microsoft.com'),
-      signInWithPopup,
+      signInWithRedirect,
+      getRedirectResult,
       signOut,
       onAuthStateChanged,
       createUserWithEmailAndPassword,

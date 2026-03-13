@@ -46,7 +46,17 @@ export const useAuthStore = defineStore('auth', () => {
     if (authUnsubscribe) return
 
     try {
-      const { auth, onAuthStateChanged } = await getFirebaseAuthServices()
+      const { auth, onAuthStateChanged, getRedirectResult } = await getFirebaseAuthServices()
+
+      // Handle redirect result from Google/Microsoft sign-in
+      getRedirectResult(auth).then((result) => {
+        if (result?.user) {
+          user.value = result.user
+        }
+      }).catch((error) => {
+        console.error('Redirect sign-in error:', error)
+      })
+
       authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
         user.value = firebaseUser
         isAuthReady.value = true
@@ -65,10 +75,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithGoogle() {
     try {
-      const { auth, googleProvider, signInWithPopup } = await getFirebaseAuthServices()
-      const result = await signInWithPopup(auth, googleProvider)
-      user.value = result.user
-      return result.user
+      const { auth, googleProvider, signInWithRedirect } = await getFirebaseAuthServices()
+      await signInWithRedirect(auth, googleProvider)
     } catch (error) {
       console.error("Google Sign-In Error:", error)
       throw error
@@ -77,10 +85,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function loginWithMicrosoft() {
     try {
-      const { auth, microsoftProvider, signInWithPopup } = await getFirebaseAuthServices()
-      const result = await signInWithPopup(auth, microsoftProvider)
-      user.value = result.user
-      return result.user
+      const { auth, microsoftProvider, signInWithRedirect } = await getFirebaseAuthServices()
+      await signInWithRedirect(auth, microsoftProvider)
     } catch (error) {
       console.error("Microsoft Sign-In Error:", error)
       throw error
