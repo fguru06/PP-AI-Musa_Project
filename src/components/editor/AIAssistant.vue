@@ -224,7 +224,7 @@ const providerDisplayName = computed(() => (aiStore.apiProvider === 'gemini' ? '
 const providerKeyPlaceholder = computed(() => (aiStore.apiProvider === 'gemini' ? 'AIza...' : 'sk-...'))
 const providerKeyHint = computed(() => (
   aiStore.apiProvider === 'gemini'
-    ? 'Gemini API keys from Google AI Studio can use the free tier for supported features. The key is stored locally in your browser and never sent to our servers.'
+    ? 'Gemini API keys from Google AI Studio work for text features on the free tier. Gemini image generation on the Developer API typically requires a billing-enabled project. The key is stored locally in your browser and never sent to our servers.'
     : 'Key is stored locally in your browser. It is never sent to our servers.'
 ))
 
@@ -923,7 +923,14 @@ function getImageGenerationFailureMessage(rawError) {
   }
 
   if (normalized.includes('billing hard limit') || normalized.includes('billing') || normalized.includes('quota') || normalized.includes('insufficient_quota')) {
+    if (aiStore.apiProvider === 'gemini') {
+      return 'Gemini image generation is being rejected by Google because this project is still on the free tier. Gemini Developer API image models require a billing-enabled project, so you need to enable billing in AI Studio or switch providers for image generation.'
+    }
     return `Your ${providerName} account cannot generate images right now because its billing or quota limit has been reached. Update billing or wait for quota reset, then try again.`
+  }
+
+  if (aiStore.apiProvider === 'gemini' && (normalized.includes('resource exhausted') || normalized.includes('free tier') || normalized.includes('generativelanguage.googleapis.com'))) {
+    return 'Gemini image generation is not available to this free-tier project. Enable billing for the Gemini project in AI Studio to use Gemini image models.'
   }
 
   if (normalized.includes('invalid api key') || normalized.includes('incorrect api key') || normalized.includes('unauthorized')) {
@@ -1455,6 +1462,10 @@ async function runFreePrompt() {
       <!-- Image Generation -->
       <template v-else-if="activeMode === 'image'">
         <p class="ai-hint" style="margin-bottom:var(--space-3)">Generate distinct educational visual assets instantly. The image will be added directly to your slide.</p>
+        <div v-if="aiStore.apiProvider === 'gemini'" class="demo-notice" style="margin-bottom: var(--space-3)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Gemini text features work on the free tier, but Gemini image generation on the Developer API usually needs billing enabled for the project.
+        </div>
         <div v-if="!aiStore.apiKey" class="ai-error" style="margin-bottom: var(--space-3)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           AI image generation needs a {{ providerDisplayName }} API key in API settings.
@@ -1499,7 +1510,7 @@ async function runFreePrompt() {
           </div>
           <div v-if="aiStore.apiProvider === 'gemini'" class="demo-notice">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            Gemini is enabled for content, quiz, voiceover, improve, translate, and image generation in this app.
+            Gemini is enabled for content, quiz, voiceover, improve, and translate in this app. Gemini image generation may still require billing on the Google project.
           </div>
           <div v-if="!aiStore.apiKey" class="demo-notice">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
