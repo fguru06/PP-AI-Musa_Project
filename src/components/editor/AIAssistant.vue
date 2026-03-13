@@ -220,6 +220,14 @@ const aiStore = useAIStore()
 const editorStore = useEditorStore()
 const projectStore = useProjectStore()
 
+const providerDisplayName = computed(() => (aiStore.apiProvider === 'gemini' ? 'Gemini' : 'OpenAI'))
+const providerKeyPlaceholder = computed(() => (aiStore.apiProvider === 'gemini' ? 'AIza...' : 'sk-...'))
+const providerKeyHint = computed(() => (
+  aiStore.apiProvider === 'gemini'
+    ? 'Gemini API keys from Google AI Studio can use the free tier for text features. The key is stored locally in your browser and never sent to our servers.'
+    : 'Key is stored locally in your browser. It is never sent to our servers.'
+))
+
 const activeMode = ref('generate') // 'generate' | 'quiz' | 'voiceover' | 'improve' | 'settings'
 const prompt = ref('')
 const topic = ref('')
@@ -1448,7 +1456,7 @@ async function runFreePrompt() {
         <p class="ai-hint" style="margin-bottom:var(--space-3)">Generate distinct educational visual assets instantly. The image will be added directly to your slide.</p>
         <div v-if="!aiStore.apiKey || aiStore.apiProvider !== 'openai'" class="ai-error" style="margin-bottom: var(--space-3)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          AI image generation needs an OpenAI API key in API settings. This action no longer inserts fallback photos.
+          AI image generation needs an OpenAI API key in API settings. Gemini support in this app is text-only.
         </div>
         <div class="form-group" style="margin-bottom:var(--space-3)">
           <label class="form-label">Image Description</label>
@@ -1474,7 +1482,7 @@ async function runFreePrompt() {
             <label class="form-label">AI Provider</label>
             <select :value="aiStore.apiProvider" class="select" @change="aiStore.setProvider($event.target.value)">
               <option value="openai">OpenAI (GPT-4o mini)</option>
-              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="gemini">Google Gemini (Free tier for text)</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom:var(--space-4)">
@@ -1483,14 +1491,18 @@ async function runFreePrompt() {
               type="password"
               :value="aiStore.apiKey"
               class="input"
-              placeholder="sk-…"
+              :placeholder="providerKeyPlaceholder"
               @change="aiStore.setApiKey($event.target.value)"
             />
-            <p class="form-hint">Key is stored locally in your browser. It is never sent to our servers.</p>
+            <p class="form-hint">{{ providerKeyHint }}</p>
+          </div>
+          <div v-if="aiStore.apiProvider === 'gemini'" class="demo-notice">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Gemini is enabled for text tasks in this app: content, quiz, voiceover, improve, and translate. Image generation remains OpenAI-only.
           </div>
           <div v-if="!aiStore.apiKey" class="demo-notice">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            Running in <strong>demo mode</strong> — sample responses only. Add your API key to use real AI generation.
+            Running in <strong>demo mode</strong> — sample responses only. Add your {{ providerDisplayName }} API key to use real AI generation.
           </div>
         </div>
       </template>

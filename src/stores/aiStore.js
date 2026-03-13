@@ -2,6 +2,108 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 const SUPPORTED_LAYOUT_MODES = new Set(['classic', 'cards', 'comparison', 'metrics', 'timeline', 'faq', 'process'])
+const SUPPORTED_AI_PROVIDERS = new Set(['openai', 'gemini'])
+const PROVIDER_MODELS = {
+  openai: 'gpt-4o-mini',
+  gemini: 'gemini-2.0-flash',
+}
+
+function normalizeProvider(provider) {
+  const normalized = String(provider || 'openai').trim().toLowerCase()
+  if (normalized === 'anthropic' || normalized === 'claude') return 'gemini'
+  return SUPPORTED_AI_PROVIDERS.has(normalized) ? normalized : 'openai'
+}
+
+function buildSystemInstruction(context) {
+  return `You are an expert eLearning content creator. Generate clear, engaging, and educational content. Format output as clean text unless asked for JSON. Context: ${JSON.stringify(context)}`
+}
+
+function extractErrorMessage(payload, fallbackStatus) {
+  return payload?.error?.message || payload?.message || payload?.promptFeedback?.blockReason || fallbackStatus
+}
+
+function extractOpenAIText(data) {
+  return data?.choices?.[0]?.message?.content || ''
+}
+
+function extractGeminiText(data) {
+  const parts = Array.isArray(data?.candidates)
+    ? data.candidates.flatMap((candidate) => candidate?.content?.parts || [])
+    : []
+
+  const text = parts
+    .map((part) => part?.text || '')
+    .join('')
+    .trim()
+
+  return text || ''
+}
+
+async function requestOpenAI(apiKey, prompt, context) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: PROVIDER_MODELS.openai,
+      messages: [
+        {
+          role: 'system',
+          content: buildSystemInstruction(context),
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 1500,
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(extractErrorMessage(err, `HTTP ${response.status}`))
+  }
+
+  const data = await response.json()
+  return {
+    text: extractOpenAIText(data),
+    model: PROVIDER_MODELS.openai,
+  }
+}
+
+async function requestGemini(apiKey, prompt, context) {
+  const model = PROVIDER_MODELS.gemini
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: buildSystemInstruction(context) }],
+      },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1500,
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(extractErrorMessage(err, `HTTP ${response.status}`))
+  }
+
+  const data = await response.json()
+  const text = extractGeminiText(data)
+  if (!text) {
+    throw new Error(extractErrorMessage(data, 'Gemini did not return text content.'))
+  }
+
+  return { text, model }
+}
 
 function normalizeLayoutMode(layoutMode) {
   const normalized = String(layoutMode || 'classic').trim().toLowerCase()
@@ -245,7 +347,7 @@ function buildMockSlideContent(topic, layoutMode) {
 
 export const useAIStore = defineStore('ai', () => {
   const apiKey = ref(localStorage.getItem('ai_api_key') || '')
-  const apiProvider = ref(localStorage.getItem('ai_provider') || 'openai')
+  const apiProvider = ref(normalizeProvider(localStorage.getItem('ai_provider') || 'openai'))
   const isGenerating = ref(false)
   const lastError = ref('')
   const generationHistory = ref([])
@@ -256,8 +358,9 @@ export const useAIStore = defineStore('ai', () => {
   }
 
   function setProvider(provider) {
-    apiProvider.value = provider
-    localStorage.setItem('ai_provider', provider)
+    const normalizedProvider = normalizeProvider(provider)
+    apiProvider.value = normalizedProvider
+    localStorage.setItem('ai_provider', normalizedProvider)
   }
 
   async function generate(prompt, context = {}) {
@@ -267,33 +370,12 @@ export const useAIStore = defineStore('ai', () => {
     isGenerating.value = true
     lastError.value = ''
     try {
-      const messages = [
-        {
-          role: 'system',
-          content: `You are an expert eLearning content creator. Generate clear, engaging, and educational content. Format output as clean text unless asked for JSON. Context: ${JSON.stringify(context)}`,
-        },
-        { role: 'user', content: prompt },
-      ]
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey.value}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages,
-          temperature: 0.7,
-          max_tokens: 1500,
-        }),
-      })
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error?.message || `HTTP ${response.status}`)
-      }
-      const data = await response.json()
-      const text = data.choices[0].message.content
-      generationHistory.value.push({ prompt, result: text, timestamp: Date.now() })
+      const provider = normalizeProvider(apiProvider.value)
+      const { text, model } = provider === 'gemini'
+        ? await requestGemini(apiKey.value, prompt, context)
+        : await requestOpenAI(apiKey.value, prompt, context)
+
+      generationHistory.value.push({ prompt, result: text, provider, model, timestamp: Date.now() })
       return text
     } catch (e) {
       lastError.value = e.message
