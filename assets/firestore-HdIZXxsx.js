@@ -1,0 +1,1 @@
+import{w as t,h as o,i as r,j as a,k as i,l as c,m as n,n as p}from"./firebase-CJ-VnyRu.js";import{g as l}from"./app-Dn4S2Qlj.js";let e=null;function m(){if(!e){const s=l();e={db:p(s),collection:n,deleteDoc:c,doc:i,getDocs:a,onSnapshot:r,setDoc:o,writeBatch:t}}return e}export{m as getFirebaseFirestoreServices};
